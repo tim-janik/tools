@@ -1,0 +1,155 @@
+#!/bin/bash
+# YummiYummiGit - The simplest git wrapper ever, yet convenient
+#
+# Copyright (C) 2007 Tim Janik <timj@gtk.org>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# If you have not received a copy of the GNU General Public License
+# along with this program, see: http://www.gnu.org/licenses/
+
+#set -e	# exit on errors
+#set -x	# show commands
+
+VERSION=YummiYummiGit-0.4
+BOLD=true ; NORM=true ; COLOR= ; OUT=cat ; yyINSTALL=false
+# figure tty output
+tty -s <&1 && {
+	BOLD='echo -ne \033[1m' ; NORM='echo -ne \033[0m'
+	COLOR=--color ; OUT=less\ -R
+}
+# perform wildcard string matches
+function match() {
+	pattern="$1" ; shift
+	case "$2" in
+	*"$pattern"*) return 0 ;;
+	esac
+	return 1
+}
+
+case "/$0" in
+*/yyadd)	exec git-update-index --add -- "$@" ;;
+*/yybranch)	test -z "$*" && exec yyhelp
+		test "x$1" = "x-f" && exec git-branch -f "$2"
+		test -n "$1"       && exec git-branch    "$1" ;;
+*/yybranchdel)	test -z "$*" && exec yyhelp
+		test "x$1" = "x-f" && exec git-branch -D "$2"
+		test "x$1" = "x-D" && exec git-branch -D "$2"
+		test -n "$1"       && exec git-branch -d "$1" ;;
+*/yyChangeLog)	test -n "$*" && exec yyhelp
+		git-log --pretty='format:%ad %an	# %H (%cn)%n%n%s%n%n%b' |
+		sed 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' | $OUT ;;
+*/yycommit)	exec cg-commit -- "$@" ;;
+*/yydiff)	git-diff-index -r -m -M -C -p $COLOR HEAD -- "$@" | $OUT ;;
+*/yygc)		test -n "$*" && exec yyhelp
+		exec git-gc --prune ;;
+*/yylsbranches)	test -n "$*" && exec yyhelp
+		exec git-branch $COLOR ;;
+*/yylstags)	test -n "$*" && exec yyhelp
+		exec git-tag -l '.*' ;;
+*/yypull)	exec git-pull ;;
+*/yypushpull)	test -n "$*" && exec yyhelp
+		git-push && git-pull || exit $? ;;
+*/yyremove)	exec git-update-index --force-remove -- "$@" ;;
+*/yyreset)	test -n "$*" && exec yyhelp
+		exec git-checkout -f HEAD ;;
+*/yyrestore)	git-ls-tree -r HEAD -- "$@" | git-update-index --index-info # resurrect deleted
+		exec git-checkout-index -f -u -- "$@" ;;
+*/yystatus)	test -n "$*" && exec yyhelp
+		exec cg-status -w -x ;;
+*/yytag)	test -z "$*" && exec yyhelp
+		match " -" " $*" && exec yyhelp
+		exec git-tag "$1" ;;
+*/yytagdel)	test -z "$*" && exec yyhelp
+		match " -" " $*" && exec yyhelp
+		exec git-tag -d "$1" ;;
+*/yyuncommit)	test -n "$*" && exec yyhelp
+		exec git-reset --soft HEAD~1 ;;
+*/yyview)	test -n "$*" && exec yyhelp
+		exec gitk --all -d ;;
+*/yywarp)	test -z "$*" && exec yyhelp
+		exec git-checkout "$1" ;;
+*/yyhelp)
+    test "x$1" = "x--create-aliases" && yyINSTALL=true || {
+	echo -e 'YummiYummiGit                                                     YummiYummiGit'
+	echo
+	$BOLD
+	echo -e 'NAME'
+	$NORM
+	echo -e '\tYummiYummiGit - The simplest git wrapper ever, yet convenient'
+	echo
+	$BOLD
+	echo -e 'SYNOPSIS'
+	$NORM
+	echo -e '\tyyadd          [FILES...] - add files to git repository'
+	echo -e '\tyybranch    [-f] <branch> - add branch (forcable)'
+	echo -e '\tyybranchdel [-f] <branch> - delete branch (forcable)'
+	echo -e '\tyyChangeLog               - show git log in ChangeLog style'
+	echo -e '\tyycommit       [FILES...] - commit current working tree'
+	echo -e '\tyydiff         [FILES...] - show committable differences in working tree'
+	echo -e '\tyygc                      - repack and prune repository'
+	echo -e '\tyyhelp                    - display yy* help information'
+	echo -e '\tyylsbranches              - list branches'
+	echo -e '\tyylstags                  - list tags'
+	echo -e '\tyypull                    - pull upstream sources'
+	echo -e '\tyypushpull                - push & pull upstream sources'
+	echo -e '\tyyremove       [FILES...] - remove files from git repository'
+	echo -e '\tyyreset                   - reset (revert to HEAD) all files in the tree'
+	echo -e '\tyyrestore      [FILES...] - forcefully recheckout specific files'
+	echo -e '\tyystatus                  - display working tree status'
+	echo -e '\tyytag               <tag> - add tag'
+	echo -e '\tyytagdel            <tag> - delete tag'
+	echo -e '\tyyuncommit                - undo the last commit (must be unpushed)'
+	echo -e '\tyyview                    - browse & navigate the history'
+	echo -e '\tyywarp           <branch> - checkout new branch'
+	echo
+	$BOLD
+	echo -e 'HISTORY'
+	$NORM
+	echo -e "\tYummiYummiGit was created as a very shallow wrapper around git-* tool"
+	echo -e "\toption variants, to simplify common cases."
+	echo -e "\tDepending on programming habits, YummiYummiGit may or may not suit your"
+	echo -e "\tdaily needs. It is in any case not meant as a full replacement for the"
+	echo -e "\tgit interface (there is e.g. no yyclone) and subject to change."
+	echo
+	$BOLD
+	echo -e 'INSTALLATION'
+	$NORM
+	echo -e '\tTo install YummiYummiGit, copy yyhelp into a bin/ directory from $PATH'
+	echo -e '\tand invoke: ./yyhelp --create-aliases'
+	echo
+	VERSIONSTRING_FIXED=`printf '%-20s' "$VERSION"`
+	echo -e "$VERSIONSTRING_FIXED                                              YummiYummiGit"
+    } | $OUT
+    ;;
+esac
+
+# BACKGROUND
+# The prefix 'yy' was choosen to allow conflict free shell completion.
+# YummiYummiGit was started only after cogito was announced to be halted.
+# It is meant to not depend on cogito one day, albeit that's not yet
+# possible.
+
+$yyINSTALL && {
+	git --version | egrep '^git version (1\.[5-9]\.|[2-9]\.)' -q ||
+					   { echo "$0: failed to install: missing git >= 1.5.0" >&2 ; exit 2 ; }
+	test -x ./yyhelp		|| { echo "$0: failed to install: missing ./yyhelp" >&2 ; exit 2 ; }
+	test -x /bin/bash		|| { echo "$0: failed to install: missing /bin/bash" >&2 ; exit 2 ; }
+	cg --help >/dev/null 2>&1	|| { echo "$0: failed to install: missing cogito" >&2 ; exit 2 ; }
+	set -e
+	for i in yyadd yybranch yybranchdel yyChangeLog yycommit yydiff yygc \
+	         yylsbranches yylstags yypull yypushpull yyremove yyreset yyrestore yystatus \
+	         yytag yytagdel yyuncommit yyview yywarp ; do
+		test -L $i || ln -s yyhelp $i
+	done
+}
+
+exit 0
