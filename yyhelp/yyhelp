@@ -73,7 +73,7 @@ case "/$0" in
 */yyChangeLog)	test -n "$*" && exec yyhelp
 		git-log --pretty='format:%ad %an	# %H (%cn)%n%n%s%n%n%b' |
 		sed 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' | $OUT ;;
-*/yycommit)	cg-commit -- "$@" && test "true" = `git-config --bool yyhelp.auto-push-commits` && yypushpull ;;
+*/yycommit)	cg-commit -- "$@" && test "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull ;;
 */yydiff)	git-update-index --refresh > /dev/null
 		git-diff-index -r -m -C -p $COLOR HEAD -- "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
