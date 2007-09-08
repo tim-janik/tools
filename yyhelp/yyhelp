@@ -19,7 +19,7 @@
 #set -e	# exit on errors
 #set -x	# show commands
 
-VERSION=YummyYummySourceControl-0.5
+VERSION=YummyYummySourceControl-0.5b
 
 # setup
 SETBOLD=true ; SETNORM=true ; COLOR= ; OUT=cat ; YYHELP=
@@ -73,7 +73,8 @@ case "/$0" in
 */yyChangeLog)	test -n "$*" && exec yyhelp
 		git-log --pretty='format:%ad %an	# %H (%cn)%n%n%s%n%n%b' |
 		sed 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' | $OUT ;;
-*/yycommit)	cg-commit -- "$@" && test "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull ;;
+*/yycommit)	git-update-index --refresh > /dev/null  # update stat info
+		cg-commit -- "$@" && test "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull ;;
 */yydiff)	git-update-index --refresh > /dev/null
 		git-diff-index -r -m -C -p $COLOR HEAD -- "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
@@ -104,7 +105,7 @@ case "/$0" in
 */yyremove)	exec git-update-index --force-remove -- "$@" ;;
 */yyreset)	test -n "$*" && exec yyhelp
 		exec git-checkout -f HEAD ;;
-*/yyrestore)	git-ls-tree -r HEAD -- "$@" | git-update-index --index-info # resurrect deleted
+*/yyrestore)	git-ls-tree --full-name -r HEAD -- "$@" | git-update-index --index-info # resurrect deleted
 		exec git-checkout-index -f -u -- "$@" ;;
 */yystatus)	test -z "$*" || match '-[tuc]' "$*" || exec yyhelp
 		git-update-index --refresh > /dev/null	# update stat info
