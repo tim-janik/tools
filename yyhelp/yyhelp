@@ -19,7 +19,7 @@
 #set -e	# exit on errors
 #set -x	# show commands
 
-VERSION=YummyYummySourceControl-0.5b
+VERSION=YummyYummySourceControl-0.6
 
 # setup
 SETBOLD=true ; SETNORM=true ; COLOR= ; OUT=cat ; YYHELP=
@@ -32,6 +32,12 @@ function match() {
 	$pattern) return 0 ;; # $pattern must be unquoted to allow *?[]
 	esac
 	return 1
+}
+function exit_err() {
+	ecode=127
+	test -n "$1" && { ecode="$1"; shift; }
+	test -n "$*" && { echo -ne "$*\n" >&2 ; }
+	exit $ecode
 }
 
 # configure for terminals with ANSI color escapes
@@ -53,6 +59,12 @@ if test -f "$gitdir/HEAD" ; then
 elif ! test "$YYHELP" ; then
 	echo "`basename \"$0\"`: No repository" >&2 ; exit 9
 fi
+gitsvn=false
+SVNURL="`git-config --get svn-remote.svn.url`";
+GITURL="`git-config --get remote.origin.url`"; test -z "$GITURL" && GITURL="`cat $gitdir/remotes/origin 2>/dev/null | sed -n '/^URL: /{s/^URL: //;p;q}'`"
+test -z "$GITURL" -a -r "$gitdir/branches/origin" && GITURL="`cat $gitdir/branches/origin`" # cogito location
+test -n "$SVNURL" -a -z "$GITURL" && gitsvn=true # use git-svn for local git repos with svn url
+test -z "$GITURL" && GITURL="`cd \"$gitdir\" && pwd`" # no url, must be local
 
 # GIT commands
 case "/$0" in
@@ -63,35 +75,40 @@ case "/$0" in
 		    sed "/^[^()]\+(Not Committed Yet\b/{ s/^\([^()]\+\)(\([^()]\+\))\(.*\)/$GREEN\1$TURK(\2)$GREEN\3$NORM/; p; d };
                                                        s/^\([^()]\+\)(\([^()]\+\))/$BOLD\1$NORM$TURK(\2)$NORM/" \
 		    || cat ; } | $OUT ;;
-*/yybranch)	test -z "$*" && exec yyhelp
-		test "x$1" = "x-f" && exec git-branch -f "$2"
-		test -n "$1"       && exec git-branch    "$1" ;;
-*/yybranchdel)	test -z "$*" && exec yyhelp
-		test "x$1" = "x-f" && exec git-branch -D "$2"
-		test "x$1" = "x-D" && exec git-branch -D "$2"
-		test -n "$1"       && exec git-branch -d "$1" ;;
+*/yybranch)	FORCE=; test "x$1" = "x-f" && { FORCE=-f; shift ; }
+	        test "$#" = 1 && BRANCH="$1" || exec yyhelp
+		exec git-branch $FORCE "$BRANCH" ;;
+*/yybranchdel)	DEL=-d; test "x$1" = "x-f" && { DEL=-D; shift ; }
+	        test "$#" = 1 && BRANCH="$1" || exec yyhelp
+		exec git-branch $DEL "$BRANCH" ;;
 */yyChangeLog)	test -n "$*" && exec yyhelp
 		git-log --pretty='format:%ad %an	# %H (%cn)%n%n%s%n%n%b' |
 		sed 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' | $OUT ;;
 */yycommit)	git-update-index --refresh > /dev/null  # update stat info
 		cg-commit -- "$@" && test "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull ;;
-*/yydiff)	git-update-index --refresh > /dev/null
-		git-diff-index -r -m -C -p $COLOR HEAD -- "$@" | $OUT ;;
+*/yydiff)	args=`getopt -n "$0" -o r: -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
+		rev=HEAD
+		while :; do case "$1" in
+		-r) rev="$2"; shift 2; git-rev-parse --verify "$rev" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $rev" ;;
+		--) shift; break ;;
+		esac; done
+		git-update-index --refresh > /dev/null
+		git-diff-index -r -m -C -p $COLOR "$rev" -- "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
 		exec git-gc --prune ;;
 */yyinfo)	test -n "$*" && exec yyhelp
 		REPO="`cd \"$gitdir/..\" && basename \"$(pwd)\" `"
 		REPODIR="`git-rev-parse --show-cdup`" ; test -z "$REPODIR" && REPODIR=.
-		URL="`git-config --get remote.origin.url`"; test -z "$URL" && URL="`cat $gitdir/remotes/origin 2>/dev/null | sed -n '/^URL: /{s/^URL: //;p;q}'`"
-		SVNURL="`git-config --get svn-remote.svn.url`";
-		test -z "$URL" -a -r "$gitdir/branches/origin" && URL="`cat $gitdir/branches/origin`" # cogito location
-		test -z "$URL" && URL="`cd \"$gitdir\" && pwd`" # no url, must be local
 		OC="`git-rev-parse --verify origin 2>/dev/null`"; test -n "$OC" && OC="`date -d \"$(git-log -n1 --pretty=format:%cD $OC)\" '+%F %T %z'` # $OC"
 		HC="`git-rev-parse --verify HEAD   2>/dev/null`"; test -n "$HC" && HC="`date -d \"$(git-log -n1 --pretty=format:%cD $HC)\" '+%F %T %z'` # $HC"
+		test -n "$SVNURL" && SVNREV=`git-cat-file commit HEAD | tail -n1 | sed -n '/^git-svn-id:.*/ { s/^[^@]\+@\([0-9]\+\).*/\1/ ; p }'`
 		true			&& echo "GIT-Repo: $REPO"
-		true			&& echo "URL:      $URL"
-		test -n "$SVNURL"	&& echo "SVN:      $SVNURL"
+		true			&& echo "URL:      $GITURL"
 		true			&& echo "Path:     $REPODIR"
+		$gitsvn                 && echo "Method:   git-svn commands are used for push and pull"
+		$gitsvn			|| echo "Method:   git-push and git-pull are used for updates"
+		test -n "$SVNURL"	&& echo "SVN-URL:  $SVNURL"
+		test -n "$SVNREV"	&& echo "SVN-Rev:  $SVNREV (HEAD)"
 		test -n "$HC"		&& echo "HEAD:     $HC"
 		test -n "$OC"		&& echo "Origin:   $OC"
 		;;
@@ -99,8 +116,10 @@ case "/$0" in
 		exec git-branch $COLOR ;;
 */yylstags)	test -n "$*" && exec yyhelp
 		exec git-tag -l '.*' ;;
-*/yypull)	exec git-pull ;;
+*/yypull)	test -n "$*" && exec yyhelp
+		$gitsvn && exec git-svn rebase || exec git-pull ;;
 */yypushpull)	test -n "$*" && exec yyhelp
+		$gitsvn && exec git-svn dcommit
 		git-push && git-pull || exit $? ;;
 */yyremove)	exec git-update-index --force-remove -- "$@" ;;
 */yyreset)	test -n "$*" && exec yyhelp
@@ -137,6 +156,7 @@ case "/$0" in
 */yyview)	test -n "$*" && exec yyhelp
 		exec gitk --all -d ;;
 */yywarp)	test -z "$*" && exec yyhelp
+		git-rev-parse --verify "$1" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $1"
 		exec git-checkout "$1" ;;
 *)		test "$YYHELP" || { echo "`basename \"$0\"`: No such command" >&2 ; exit 9 ; } ;;
 esac
@@ -190,8 +210,8 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyybranchdel [-f] <branch> - delete branch (forcable)'
 	echo -e '\tyyChangeLog               - show git log in ChangeLog style'
 	echo -e '\tyycommit       [FILES...] - commit current working tree'
-	echo -e '\tyydiff         [FILES...] - show committable differences in'
-	echo -e '\t                            working tree'
+	echo -e '\tyydiff [-rREV] [FILES...] - show committable differences in'
+	echo -e '\t                            working tree; given revision REV'
 	echo -e '\tyygc                      - repack and prune repository'
 	echo -e '\tyyhelp                    - display yy* help information'
 	echo -e '\tyyinfo                    - display repository information'
@@ -219,6 +239,9 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tThe scope of this wrapper is confined to a farily basic set of actions'
 	echo -e '\taround source control management, such as adding/removing/modifying'
 	echo -e '\tfiles and the simplest forms of tag and branch handling.'
+	echo -e '\tIf git-svn(1) is used to upgrade the repository, the git-svn commands'
+	echo -e '\trebase and dcommit will be used to push and pull respectively.'
+	echo -e '\tThe yyinfo command indicates git-svn repositories.'
 	echo
 	$SETBOLD
 	echo -e 'CONFIGURATION'
