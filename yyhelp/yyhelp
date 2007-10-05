@@ -19,7 +19,7 @@
 #set -e	# exit on errors
 #set -x	# show commands
 
-VERSION=YummyYummySourceControl-0.6
+VERSION=YummyYummySourceControl-0.7
 
 # setup
 SETBOLD=true ; SETNORM=true ; COLOR= ; OUT=cat ; YYHELP=
@@ -81,9 +81,13 @@ case "/$0" in
 */yybranchdel)	DEL=-d; test "x$1" = "x-f" && { DEL=-D; shift ; }
 	        test "$#" = 1 && BRANCH="$1" || exec yyhelp
 		exec git-branch $DEL "$BRANCH" ;;
-*/yyChangeLog)	test -n "$*" && exec yyhelp
-		git-log --pretty='format:%ad %an	# %H (%cn)%n%n%s%n%n%b' |
-		sed 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' | $OUT ;;
+*/yyChangeLog)	FIRSTSVN=
+	        test "x$1" = "x-s" && { shift; FIRSTSVN=$(git-rev-list HEAD --max-count=1 --grep='^git-svn-id:.*@[0-9].*-[a-f0-9]\{12\}$'); }
+		test -n "$*" && exec yyhelp
+		git-log HEAD ${FIRSTSVN:+^$FIRSTSVN} \
+		    --pretty='format:%ad %an	# %H (%cn)%n%n%s%n%n%b' |
+		  sed 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' |
+		  $OUT ;;
 */yycommit)	git-update-index --refresh > /dev/null  # update stat info
 		cg-commit -- "$@" && test "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull ;;
 */yydiff)	args=`getopt -n "$0" -o r: -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
@@ -163,8 +167,8 @@ esac
 test "$YYHELP" || exit 0 # successful command execution
 
 YYHELP_ALIASES="yyadd yyblame yybranch yybranchdel yyChangeLog yycommit yydiff yygc yyinfo
-                yylsbranches yylstags yypull yypushpull yyremove yyreset yyrestore yystatus
-                yytag yytagdel yyuncommit yyview yywarp"
+                yylsbranches yylstags yypull yypushpull yyremove yyreset yyrestore
+                yystatus yytag yytagdel yyuncommit yyview yywarp"
 
 test "x$1" = "x--install-aliases" && {
 	git --version | egrep '^git version (1\.[5-9]\.|[2-9]\.)' -q ||
@@ -208,7 +212,8 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyyblame        [FILES...] - annotate file source code'
 	echo -e '\tyybranch    [-f] <branch> - add branch (forcable)'
 	echo -e '\tyybranchdel [-f] <branch> - delete branch (forcable)'
-	echo -e '\tyyChangeLog               - show git log in ChangeLog style'
+	echo -e '\tyyChangeLog [-s]          - show git log in ChangeLog style'
+	echo -e '\t                            -s: skip committed SVN revisions'
 	echo -e '\tyycommit       [FILES...] - commit current working tree'
 	echo -e '\tyydiff [-rREV] [FILES...] - show committable differences in'
 	echo -e '\t                            working tree; given revision REV'
