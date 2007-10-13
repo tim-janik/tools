@@ -19,7 +19,7 @@
 #set -e	# exit on errors
 #set -x	# show commands
 
-VERSION=YummyYummySourceControl-0.7
+VERSION=YummyYummySourceControl-0.8
 
 # setup
 SETBOLD=true ; SETNORM=true ; COLOR= ; OUT=cat ; YYHELP=
@@ -82,14 +82,73 @@ case "/$0" in
 	        test "$#" = 1 && BRANCH="$1" || exec yyhelp
 		exec git-branch $DEL "$BRANCH" ;;
 */yyChangeLog)	FIRSTSVN=
-	        test "x$1" = "x-s" && { shift; FIRSTSVN=$(git-rev-list HEAD --max-count=1 --grep='^git-svn-id:.*@[0-9].*-[a-f0-9]\{12\}$'); }
+	        HASHFORMAT="	# %H (%cn)"
+	        test "x$1" = "x-s" && {
+		  shift;
+		  FIRSTSVN=$(git-rev-list HEAD --max-count=1 --grep='^git-svn-id:.*@[0-9].*-[a-f0-9]\{12\}$');
+		  HASHFORMAT= # skip commit SHA1
+		}
 		test -n "$*" && exec yyhelp
-		git-log HEAD ${FIRSTSVN:+^$FIRSTSVN} \
-		    --pretty='format:%ad %an	# %H (%cn)%n%n%s%n%n%b' |
-		  sed 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' |
+		git-log HEAD ${FIRSTSVN:+^$FIRSTSVN}                    \
+		    --pretty="format:%ad %an$HASHFORMAT%n%n%s%n%n%b"  |
+		  sed -e 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' \
+                      -e 's/^[	 ]*$//'                                 |
 		  $OUT ;;
-*/yycommit)	git-update-index --refresh > /dev/null  # update stat info
-		cg-commit -- "$@" && test "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull ;;
+*/yycommit)     # standard boilerplate
+	        USAGE='[FILES...]' ; SUBDIRECTORY_OK=Yes ; . git-sh-setup ; require_work_tree
+		verify_msg=true
+		# check and set AUTHOR and COMMITTER
+		git-var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || exit_err 9 "$0: missing commit author information"
+		git-var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || exit_err 9 "$0: missing committer information"
+		AIDENT=$(git-var GIT_AUTHOR_IDENT    | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
+		  read author; read time; echo -n "  $author" ; echo $time | awk '{ print strftime (" %F %T %z", $1) }'
+		})
+		CIDENT=$(git-var GIT_COMMITTER_IDENT | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
+		  read author; read time; echo -n "  $author" ; echo $time | awk '{ print strftime (" %F %T %z", $1) }'
+		})
+		# construct commit message
+		echo > "$GIT_DIR/commit-editmsg.txt" || exit $? # abort if not writable
+		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
+		#YY: ----------------------------------------------------------------------
+		#YY: Files to be committed (determined by "#YY:F"):
+		#YY:
+_EOF_HERE
+		yystatus -t | sed 's/^/#YY:F   /' >> "$GIT_DIR/commit-editmsg.txt"
+		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
+		#YY:
+		#YY: Author:
+		#YY: $AIDENT
+		#YY: Committer:
+		#YY: $CIDENT
+		#YY:
+_EOF_HERE
+		yyinfo | sed 's/^/#YY: /' >> "$GIT_DIR/commit-editmsg.txt"
+		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
+		#YY:
+		#YY: (The "#YY:" prefixed lines are ignored for commit messages)
+_EOF_HERE
+		# edit commit message
+		grep -q '^#YY:F ' "$GIT_DIR/commit-editmsg.txt" || exit_err 0 "** Nothing to commit."
+		${VISUAL:-${EDITOR:-vi}} "$GIT_DIR/commit-editmsg.txt" ||
+		  exit_err 3 "** Aborting commit, editing commit message failed: $GIT_DIR/commit-editmsg.txt"
+		# verify user's commit message
+		grep -v -i '^\(Signed-off-by\|#YY\):' < "$GIT_DIR/commit-editmsg.txt" > "$GIT_DIR/commit-msg.txt" || exit $?
+		$verify_msg && test -x "$GIT_DIR/hooks/commit-msg" && { "$GIT_DIR/hooks/commit-msg" "$GIT_DIR/commit-msg.txt" || exit $? ; }
+		mlines=`git-stripspace < "$GIT_DIR/commit-msg.txt" | wc -l`
+		test 0 -lt "$mlines" || exit_err 3 "** Aborting commit, missing commit message..."
+		# prepare commit file list
+	        CFILES=`mktemp -t yyFILES.$$XXXXXX` && touch $CFILES || exit_err 9 "$0: failed to create temporary file"
+		trap "rm -f $CFILES" 0 HUP INT QUIT TRAP USR1 PIPE TERM
+		grep "^#YY:F " "$GIT_DIR/commit-editmsg.txt" |                  # filter #YY:F
+		  sed -e "s/^#YY:F \+[^ ]\+ \+//" |                             # extract file names
+		  sed -e 's,["$\\],\\&,g' -e 's/\(.*\)/"\1"/' > "$CFILES"       # enquote file names
+		rm -f "$GIT_DIR/commit-editmsg.txt"
+		eval "commitfiles=($(cat "$CFILES" ))"                          # fill array with quoted file names
+		test -n "${commitfiles[*]}" || exit_err 0 "** Nothing to commit."
+		git-ls-files --error-unmatch -- "${commitfiles[@]}" || exit $?  # check commit file list
+		git-commit -F "$GIT_DIR/commit-msg.txt" -- "${commitfiles[@]}" ; ccode=$?
+		test 0 = $ccode && rm -f "$GIT_DIR/commit-msg.txt" "$GIT_DIR/commit-editmsg.txt"
+		exit $ccode ;;
 */yydiff)	args=`getopt -n "$0" -o r: -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
 		rev=HEAD
 		while :; do case "$1" in
@@ -97,9 +156,22 @@ case "/$0" in
 		--) shift; break ;;
 		esac; done
 		git-update-index --refresh > /dev/null
-		git-diff-index -r -m -C -p $COLOR "$rev" -- "$@" | $OUT ;;
+		# 'git-diff-index -m' shows uncommittable files
+		git-diff-index -r -C -p $COLOR "$rev" -- "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
 		exec git-gc --prune ;;
+*/yyHistoryGrep)
+		REV= ; test "x$1" = "x-r" && { shift; REV=--reverse ; }
+		test "$#" = 1 || exec yyhelp
+		# create temporary file
+	        TMAP=`mktemp -t yyTMAP.$$XXXXXX` && touch $TMAP || exit_err 9 "$0: failed to create temporary file"
+		trap "rm -f $TMAP" 0 HUP INT QUIT TRAP USR1 PIPE TERM
+	        # create sed mapping from tree hashes to commit hashes
+		git-rev-list --all --pretty=format:'/^%t/s/^%T:/%H:/' | grep -v ^commit >$TMAP
+		# grep trees in chronological order and convert hashes on the fly
+		git-rev-list --all $REV --pretty=format:%T | grep -v ^commit |
+		  xargs git-grep -E -e $1 | sed -f $TMAP | $OUT
+		;;
 */yyinfo)	test -n "$*" && exec yyhelp
 		REPO="`cd \"$gitdir/..\" && basename \"$(pwd)\" `"
 		REPODIR="`git-rev-parse --show-cdup`" ; test -z "$REPODIR" && REPODIR=.
@@ -158,7 +230,7 @@ case "/$0" in
 */yyuncommit)	test -n "$*" && exec yyhelp
 		exec git-reset --soft HEAD~1 ;;
 */yyview)	test -n "$*" && exec yyhelp
-		exec gitk --all -d ;;
+		exec gitk --all -d & ;;
 */yywarp)	test -z "$*" && exec yyhelp
 		git-rev-parse --verify "$1" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $1"
 		exec git-checkout "$1" ;;
@@ -166,8 +238,8 @@ case "/$0" in
 esac
 test "$YYHELP" || exit 0 # successful command execution
 
-YYHELP_ALIASES="yyadd yyblame yybranch yybranchdel yyChangeLog yycommit yydiff yygc yyinfo
-                yylsbranches yylstags yypull yypushpull yyremove yyreset yyrestore
+YYHELP_ALIASES="yyadd yyblame yybranch yybranchdel yyChangeLog yycommit yydiff yygc yyHistoryGrep
+                yyinfo yylsbranches yylstags yypull yypushpull yyremove yyreset yyrestore
                 yystatus yytag yytagdel yyuncommit yyview yywarp"
 
 test "x$1" = "x--install-aliases" && {
@@ -175,7 +247,6 @@ test "x$1" = "x--install-aliases" && {
 					   { echo "$0: failed to install: missing git >= 1.5.0" >&2 ; exit 2 ; }
 	test -x ./yyhelp		|| { echo "$0: failed to install: missing ./yyhelp" >&2 ; exit 2 ; }
 	test -x /bin/bash		|| { echo "$0: failed to install: missing /bin/bash" >&2 ; exit 2 ; }
-	cg --help >/dev/null 2>&1	|| { echo "$0: failed to install: missing cogito" >&2 ; exit 2 ; }
 	set -e
 	for i in $YYHELP_ALIASES ; do
 		test -L $i || ln -vs yyhelp $i
@@ -189,12 +260,6 @@ test "x$1" = "x--uninstall-aliases" && {
 	done
 	exit 0
 }
-
-# BACKGROUND
-# The prefix 'yy' was choosen to allow conflict free shell completion.
-# YummyYummySourceControl was started only after cogito was announced to be
-# halted. It is meant to not depend on cogito one day, albeit that's not yet
-# possible.
 
 {	# yyhelp
 	echo -e 'YummyYummySourceControl                                 YummyYummySourceControl'
@@ -219,6 +284,9 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\t                            working tree; given revision REV'
 	echo -e '\tyygc                      - repack and prune repository'
 	echo -e '\tyyhelp                    - display yy* help information'
+	echo -e '\tyyHistoryGrep  [-r] <PAT> - grep commit history for POSIX extended'
+	echo -e '\t                            regular expression pattern PAT'
+	echo -e '\t                            -r: reverse order, search chronologically'
 	echo -e '\tyyinfo                    - display repository information'
 	echo -e '\tyylsbranches              - list branches'
 	echo -e '\tyylstags                  - list tags'
@@ -233,7 +301,7 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyytag    <tag> [revision] - add tag'
 	echo -e '\tyytagdel <tag>            - delete tag'
 	echo -e '\tyyuncommit                - undo the last commit (must be unpushed)'
-	echo -e '\tyyview                    - browse & navigate the history'
+	echo -e '\tyyview                    - start view to browse & navigate the history'
 	echo -e '\tyywarp           <branch> - checkout new branch'
 	echo
 	$SETBOLD
@@ -264,12 +332,12 @@ test "x$1" = "x--uninstall-aliases" && {
 	$SETBOLD
 	echo -e 'HISTORY'
 	$SETNORM
-	echo -e "\tYummyYummySourceControl was created as a very shallow wrapper around"
-	echo -e "\tgit-* tool option variants, to simplify the common use cases."
+	echo -e "\tYummyYummySourceControl was created as a very shallow porcelain script"
+	echo -e "\taround git(7) tool option variants, to simplify common use cases."
 	echo -e "\tDepending on programming habits, YummyYummySourceControl may or may"
-	echo -e "\tnot suit a developers daily needs. It is in any case not meant as a"
-	echo -e "\tfull replacement for the git interface (there is e.g. no yyclone) and"
-	echo -e "\tsubject to change."
+	echo -e "\tnot suit a developers daily needs. It is in no case meant as a full"
+	echo -e "\treplacement for the git interface (there is e.g. no yyclone)."
+	echo -e "\tThe prefix 'yy' was choosen to allow conflict free shell completion."
 	echo
 	VERSIONSTRING___________FIXED=`printf '%-30s' "$VERSION"`
 	echo -e "$VERSIONSTRING___________FIXED                          YummyYummySourceControl"
