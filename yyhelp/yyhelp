@@ -19,7 +19,7 @@
 #set -e	# exit on errors
 #set -x	# show commands
 
-VERSION=YummyYummySourceControl-0.8
+VERSION=YummyYummySourceControl-0.8b
 
 # setup
 SETBOLD=true ; SETNORM=true ; COLOR= ; OUT=cat ; YYHELP=
@@ -61,10 +61,23 @@ elif ! test "$YYHELP" ; then
 fi
 gitsvn=false
 SVNURL="`git-config --get svn-remote.svn.url`";
-GITURL="`git-config --get remote.origin.url`"; test -z "$GITURL" && GITURL="`cat $gitdir/remotes/origin 2>/dev/null | sed -n '/^URL: /{s/^URL: //;p;q}'`"
+GITURL="`git-config --get remote.origin.url`"; test -z "$GITURL" && GITURL="`cat $gitdir/remotes/origin 2>/dev/null | sed -n '/^URL: /{ s/^URL: //; p; q; }'`"
 test -z "$GITURL" -a -r "$gitdir/branches/origin" && GITURL="`cat $gitdir/branches/origin`" # cogito location
 test -n "$SVNURL" -a -z "$GITURL" && gitsvn=true # use git-svn for local git repos with svn url
 test -z "$GITURL" && GITURL="`cd \"$gitdir\" && pwd`" # no url, must be local
+
+# functions
+function list_committable() { # [FILES...]
+    test -s "$gitdir/commit-ignore" && commitignore="$gitdir/commit-ignore" || commitignore=
+    test -z "$*" && commitdir=. || commitdir=
+    git-diff-index --name-status --no-renames HEAD -- $commitdir "$@" | while IFS="$TAB" read -r mode file ; do
+	case "$mode" in
+	    D)	test -n "$(git-diff-files -- "$file")" && mode=! ;;
+	    M)	test -n "$commitignore" && fgrep -qx "$file" "$commitignore" && mode=n ;;
+	esac
+	echo "$mode  ${file#$gitprefix}"
+    done
+}
 
 # GIT commands
 case "/$0" in
@@ -72,7 +85,7 @@ case "/$0" in
 */yyblame)	test -z "$*" && exec yyhelp
 		git-blame -- "$@" | {
 		  test -n "$COLOR" &&
-		    sed "/^[^()]\+(Not Committed Yet\b/{ s/^\([^()]\+\)(\([^()]\+\))\(.*\)/$GREEN\1$TURK(\2)$GREEN\3$NORM/; p; d };
+		    sed "/^[^()]\+(Not Committed Yet\b/{ s/^\([^()]\+\)(\([^()]\+\))\(.*\)/$GREEN\1$TURK(\2)$GREEN\3$NORM/; p; d; };
                                                        s/^\([^()]\+\)(\([^()]\+\))/$BOLD\1$NORM$TURK(\2)$NORM/" \
 		    || cat ; } | $OUT ;;
 */yybranch)	FORCE=; test "x$1" = "x-f" && { FORCE=-f; shift ; }
@@ -113,7 +126,7 @@ case "/$0" in
 		#YY: Files to be committed (determined by "#YY:F"):
 		#YY:
 _EOF_HERE
-		yystatus -t | sed 's/^/#YY:F   /' >> "$GIT_DIR/commit-editmsg.txt"
+		list_committable "$@" | sed 's/^/#YY:F   /' >> "$GIT_DIR/commit-editmsg.txt"
 		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
 		#YY:
 		#YY: Author:
@@ -148,6 +161,7 @@ _EOF_HERE
 		git-ls-files --error-unmatch -- "${commitfiles[@]}" || exit $?  # check commit file list
 		git-commit -F "$GIT_DIR/commit-msg.txt" -- "${commitfiles[@]}" ; ccode=$?
 		test 0 = $ccode && rm -f "$GIT_DIR/commit-msg.txt" "$GIT_DIR/commit-editmsg.txt"
+		test 0 = $ccode -a "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull
 		exit $ccode ;;
 */yydiff)	args=`getopt -n "$0" -o r: -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
 		rev=HEAD
@@ -177,7 +191,7 @@ _EOF_HERE
 		REPODIR="`git-rev-parse --show-cdup`" ; test -z "$REPODIR" && REPODIR=.
 		OC="`git-rev-parse --verify origin 2>/dev/null`"; test -n "$OC" && OC="`date -d \"$(git-log -n1 --pretty=format:%cD $OC)\" '+%F %T %z'` # $OC"
 		HC="`git-rev-parse --verify HEAD   2>/dev/null`"; test -n "$HC" && HC="`date -d \"$(git-log -n1 --pretty=format:%cD $HC)\" '+%F %T %z'` # $HC"
-		test -n "$SVNURL" && SVNREV=`git-cat-file commit HEAD | tail -n1 | sed -n '/^git-svn-id:.*/ { s/^[^@]\+@\([0-9]\+\).*/\1/ ; p }'`
+		test -n "$SVNURL" && SVNREV=`git-cat-file commit HEAD | tail -n1 | sed -n '/^git-svn-id:.*/ { s/^[^@]\+@\([0-9]\+\).*/\1/; p; }'`
 		true			&& echo "GIT-Repo: $REPO"
 		true			&& echo "URL:      $GITURL"
 		true			&& echo "Path:     $REPODIR"
@@ -211,14 +225,7 @@ _EOF_HERE
 		  if test -z "$githead" ; then	# empty history, list new files
 		    git-ls-files | sed 's/^/A  /'
 		  else				# list known files, path-relative
-		    test -s "$gitdir/commit-ignore" && commitignore="$gitdir/commit-ignore" || commitignore=
-                    git-diff-index --name-status --no-renames HEAD . | while IFS="$TAB" read -r mode file ; do
-		      case "$mode" in
-                      D)	test -n "$(git-diff-files -- "$file")" && mode=! ;;
-                      M)	test -n "$commitignore" && fgrep -qx "$file" "$commitignore" && mode=n ;;
-                      esac
-                      echo "$mode  ${file#$gitprefix}"
-                    done
+		    list_committable
 		  fi
 		} | { test " $*" != " -c" && cat || sed 's/^[^ ]  \([^ ].*\)/* \1:/' ; } ;;
 */yytag)	(set -e && test -n "$*" && test -z "$3" && ! match "* -*" " $*" ) || exec yyhelp
