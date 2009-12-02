@@ -115,7 +115,7 @@ function delete_merge() {
       warn "Failed to cleanup temporary: $TMPDIR"
     echo "$xname"
   else
-    $FAKERUN && { echo "(FAKEDELETE:$2)" >&2 ; echo "$2" ; return ; }
+    $FAKERUN && { echo "(FAKEDELETE:$1)" >&2 ; echo "$2" ; return ; }
     # non-incremental deletion
     rm -rf "$1"
     echo "$2"
