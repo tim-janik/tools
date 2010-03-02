@@ -42,7 +42,9 @@ function exit_err() {
 
 # configure for terminals with ANSI color escapes
 TAB=$'\t'	# joe(1) syntax highlighting is broken for $''
-test -t 1 && match $'*\e[31m*' "`tput setaf 1 2>/dev/null`" && {
+INTERACTIVE=false
+test -t 1 -a -t 0 && match $'*\e[31m*' "`tput setaf 1 2>/dev/null`" && {
+        INTERACTIVE=true
 	SETBOLD=echo\ -ne\ '\e[1m' ; SETNORM=echo\ -ne\ '\e[0m'
 	BOLD=$'\e[1m'; GREEN=$'\e[32m'; TURK=$'\e[36m'; NORM=$'\e[0m';
 	COLOR=--color ; OUT=less\ -R
@@ -52,19 +54,25 @@ test -t 1 && match $'*\e[31m*' "`tput setaf 1 2>/dev/null`" && {
 
 # find repository
 match '*/yyhelp*' "/$0" && YYHELP=1	# no repo required
-gitdir="$(git-rev-parse --git-dir 2>/dev/null)"
+gitdir="$(git rev-parse --git-dir 2>/dev/null)"
 if test -f "$gitdir/HEAD" ; then
-	githead="$gitdir/`git-symbolic-ref -q HEAD || echo HEAD`"; test -e "$githead" || githead=
-	gitprefix="$(git-rev-parse --show-prefix)" ; test -z "$gitprefix" && gitprefix=. # no subdir support if GIT_DIR is set
+	githead=`git symbolic-ref -q HEAD || echo HEAD`; git rev-parse --verify "$githead" >/dev/null 2>&1 || githead=
+	gitprefix="$(git rev-parse --show-prefix)" ; test -z "$gitprefix" && gitprefix=. # no subdir support if GIT_DIR is set
 elif ! test "$YYHELP" ; then
 	echo "`basename \"$0\"`: No repository" >&2 ; exit 9
 fi
 gitsvn=false
-SVNURL="`git-config --get svn-remote.svn.url`";
-GITURL="`git-config --get remote.origin.url`"; test -z "$GITURL" && GITURL="`cat $gitdir/remotes/origin 2>/dev/null | sed -n '/^URL: /{ s/^URL: //; p; q; }'`"
+SVNURL="`git config --get svn-remote.svn.url`";
+GITURL="`git config --get remote.origin.url`"; test -z "$GITURL" && GITURL="`cat $gitdir/remotes/origin 2>/dev/null | sed -n '/^URL: /{ s/^URL: //; p; q; }'`"
 test -z "$GITURL" -a -r "$gitdir/branches/origin" && GITURL="`cat $gitdir/branches/origin`" # cogito location
 test -n "$SVNURL" -a -z "$GITURL" && gitsvn=true # use git-svn for local git repos with svn url
 test -z "$GITURL" && GITURL="`cd \"$gitdir\" && pwd`" # no url, must be local
+function require_master() { # <message>
+    test "`git symbolic-ref HEAD`" == 'refs/heads/master' || {
+	echo "$1"
+	exit 1
+    }
+}
 
 # functions
 function list_committable() { # [FILES...]
@@ -72,9 +80,9 @@ function list_committable() { # [FILES...]
     test -z "$*" && commitdir=. || commitdir=
     stripprefix="$gitprefix"
     test -n "$stripprefix" -a "${stripprefix: -1}" != / && stripprefix="$stripprefix/" # force trailing /
-    git-diff-index --name-status --no-renames HEAD -- $commitdir "$@" | while IFS="$TAB" read -r mode file ; do
+    git diff-index --name-status --no-renames HEAD -- $commitdir "$@" | while IFS="$TAB" read -r mode file ; do
 	case "$mode" in
-	    D)	test -n "$(git-diff-files -- "$file")" && mode=! ;;
+	    D)	test -n "$(git diff-files -- "$file")" && mode=! ;;
 	    M)	test -n "$commitignore" && fgrep -qx "$file" "$commitignore" && mode=n ;;
 	esac
 	echo "$mode  ${file#$stripprefix}"
@@ -83,42 +91,53 @@ function list_committable() { # [FILES...]
 
 # GIT commands
 case "/$0" in
-*/yyadd)	exec git-update-index --add -- "$@" ;;
+*/yyadd)	exec git update-index --add -- "$@" ;;
 */yyblame)	test -z "$*" && exec yyhelp
-		git-blame -- "$@" | {
+		git blame -- "$@" | {
 		  test -n "$COLOR" &&
 		    sed "/^[^()]\+(Not Committed Yet\b/{ s/^\([^()]\+\)(\([^()]\+\))\(.*\)/$GREEN\1$TURK(\2)$GREEN\3$NORM/; p; d; };
                                                        s/^\([^()]\+\)(\([^()]\+\))/$BOLD\1$NORM$TURK(\2)$NORM/" \
 		    || cat ; } | $OUT ;;
 */yybranch)	FORCE=; test "x$1" = "x-f" && { FORCE=-f; shift ; }
 	        test "$#" = 1 && BRANCH="$1" || exec yyhelp
-		exec git-branch $FORCE "$BRANCH" ;;
-*/yybranchdel)	DEL=-d; test "x$1" = "x-f" && { DEL=-D; shift ; }
+		exec git branch $FORCE "$BRANCH" ;;
+*/yybranchdel)	DEL=-d; FORCE=n; test "x$1" = "x-f" && { DEL=-D; FORCE=y; shift ; }
 	        test "$#" = 1 && BRANCH="$1" || exec yyhelp
-		exec git-branch $DEL "$BRANCH" ;;
+		git show-ref -q --heads "$BRANCH" || exit_err 3 "`basename $0`: No such branch: $BRANCH"
+	        H=`git rev-parse HEAD`
+		C=`git rev-parse "$BRANCH"`
+		B=`git merge-base "$H" "$C"`
+		test "$B" != "$C" -a $FORCE != y && {
+		    test true != $INTERACTIVE && exit_err 1 "`basename $0`: Branch '$BRANCH' is not an ancestor of HEAD"
+		    echo -n "Delete branch '$BRANCH' which is not an ancestor of HEAD? (y/N) "
+		    read answ
+		    test "$answ" != "y" && exit 1
+		    DEL=-D
+		}
+		exec git branch $DEL "$BRANCH" ;;
 */yyChangeLog)	FIRSTSVN=
 	        HASHFORMAT="	# %H (%cn)"
 	        test "x$1" = "x-s" && {
 		  shift;
-		  FIRSTSVN=$(git-rev-list HEAD --max-count=1 --grep='^git-svn-id:.*@[0-9].*-[a-f0-9]\{12\}$');
+		  FIRSTSVN=$(git rev-list HEAD --max-count=1 --grep='^git-svn-id:.*@[0-9].*-[a-f0-9]\{12\}$');
 		  HASHFORMAT= # skip commit SHA1
 		}
 		test -n "$*" && exec yyhelp
-		git-log HEAD ${FIRSTSVN:+^$FIRSTSVN}                    \
+		git log HEAD ${FIRSTSVN:+^$FIRSTSVN}                    \
 		    --pretty="format:%ad %an$HASHFORMAT%n%n%s%n%n%b"  |
 		  sed -e 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' \
                       -e 's/^[	 ]*$//'                                 |
 		  $OUT ;;
 */yycommit)     # standard boilerplate
-	        USAGE='[FILES...]' ; SUBDIRECTORY_OK=Yes ; . git-sh-setup ; require_work_tree
+	        USAGE='[FILES...]' ; SUBDIRECTORY_OK=Yes ; . "$(git --exec-path)/git-sh-setup" ; require_work_tree
 		verify_msg=true
 		# check and set AUTHOR and COMMITTER
-		git-var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || exit_err 9 "$0: missing commit author information"
-		git-var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || exit_err 9 "$0: missing committer information"
-		AIDENT=$(git-var GIT_AUTHOR_IDENT    | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
+		git var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || exit_err 9 "$0: missing commit author information"
+		git var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || exit_err 9 "$0: missing committer information"
+		AIDENT=$(git var GIT_AUTHOR_IDENT    | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
 		  read author; read time; echo -n "  $author" ; echo $time | gawk '{ print strftime (" %F %T %z", $1) }'
 		})
-		CIDENT=$(git-var GIT_COMMITTER_IDENT | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
+		CIDENT=$(git var GIT_COMMITTER_IDENT | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
 		  read author; read time; echo -n "  $author" ; echo $time | gawk '{ print strftime (" %F %T %z", $1) }'
 		})
 		# construct commit message
@@ -149,20 +168,20 @@ _EOF_HERE
 		# verify user's commit message
 		grep -v -i '^\(Signed-off-by\|#YY\):' < "$GIT_DIR/commit-editmsg.txt" > "$GIT_DIR/commit-msg.txt" || exit $?
 		$verify_msg && test -x "$GIT_DIR/hooks/commit-msg" && { "$GIT_DIR/hooks/commit-msg" "$GIT_DIR/commit-msg.txt" || exit $? ; }
-		mlines=`git-stripspace < "$GIT_DIR/commit-msg.txt" | wc -l`
+		mlines=`git stripspace < "$GIT_DIR/commit-msg.txt" | wc -l`
 		test 0 -lt "$mlines" || exit_err 3 "** Aborting commit, missing commit message..."
 		# save current index around commit (since GIT_INDEX_FILE=tmpindex git-commit is buggy)
 		TMPINDEX=`mktemp "$GIT_DIR/.precommittindex$$.XXXXXX"` && cp -p "$GIT_DIR/index" "$TMPINDEX" || exit_err 9 "$0: failed to create temporary file"
 		trap 'mv -f "$TMPINDEX" "$GIT_DIR/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM
 		# unstage everything in index
-		git-read-tree HEAD
+		git read-tree HEAD
 		# stage files from commit message
 		grep "^#YY:F " "$GIT_DIR/commit-editmsg.txt" |                  # filter #YY:F
 		  sed -e "s/^#YY:F \+//" | {                                    # extract file names
                     while IFS=" " read -r mode file ; do
 		      case "$mode" in
-		      D)  	git-update-index --force-remove -- "$file" || exit_err 5 "** Aborting commit, removing failed: $file" ;;
-		      A|M)	git-update-index --add          -- "$file" || exit_err 6 "** Aborting commit, adding failed: $file" ;;
+		      D)  	git update-index --force-remove -- "$file" || exit_err 5 "** Aborting commit, removing failed: $file" ;;
+		      A|M)	git update-index --add          -- "$file" || exit_err 6 "** Aborting commit, adding failed: $file" ;;
 		      n)        ;; # commitignore
 		      '!')      ;; # missing file
 		      *)        exit_err 7 "** Aborting commit, unknown file mode: $mode $file" ;;
@@ -171,28 +190,29 @@ _EOF_HERE
 		  }
 		rm -f "$GIT_DIR/commit-editmsg.txt"
 		# abort for empty committs
-		git-diff-index --cached HEAD | grep -q '.' || exit_err 0 "** Nothing to commit."
+		git diff-index --cached HEAD | grep -q '.' || exit_err 0 "** Nothing to commit."
 		# actually commit changes
-		git-commit -F "$GIT_DIR/commit-msg.txt" ; ccode=$?
+		git commit -F "$GIT_DIR/commit-msg.txt" ; ccode=$?
 		# cleanup, restore old index and force update on comitted files
 		test 0 = $ccode && rm -f "$GIT_DIR/commit-msg.txt" "$GIT_DIR/commit-editmsg.txt"
 		mv -f "$TMPINDEX" "$GIT_DIR/index"
 		trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM
-		git-update-index --refresh --again > /dev/null  # update stat info
+		git update-index --refresh --again > /dev/null  # update stat info
 		# handle auto pushing
-		test 0 = $ccode -a "true" = "`git-config --bool yyhelp.auto-push-commits`" && yypushpull
+		test 0 = $ccode -a "true" = "`git config --bool yyhelp.auto-push-commits`" && yypushpull
 		exit $ccode ;;
 */yydiff)	args=`getopt -n "$0" -o r: -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
 		rev=HEAD
 		while :; do case "$1" in
-		-r) rev="$2"; shift 2; git-rev-parse --verify "$rev" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $rev" ;;
+		-r) rev="$2"; shift 2; git rev-parse --verify "$rev" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $rev" ;;
 		--) shift; break ;;
 		esac; done
-		git-update-index --refresh > /dev/null
+		git update-index --refresh > /dev/null
 		# 'git-diff-index -m' shows uncommittable files
-		git-diff-index -r -C -p $COLOR "$rev" -- "$@" | $OUT ;;
+		CWD=; test -z "$*" && CWD=. # run diff relative to CWD, just like yycommit commits relative to CWD
+		git diff-index -r -C -p $COLOR "$rev" -- $CWD "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
-		exec git-gc --prune ;;
+		exec git gc --prune ;;
 */yyHistoryGrep)
 		REV= ; test "x$1" = "x-r" && { shift; REV=--reverse ; }
 		test "$#" = 1 || exec yyhelp
@@ -200,17 +220,17 @@ _EOF_HERE
 	        TMAP=`mktemp -t yyTMAP.$$XXXXXX` && touch $TMAP || exit_err 9 "$0: failed to create temporary file"
 		trap "rm -f $TMAP" 0 HUP INT QUIT TRAP USR1 PIPE TERM
 	        # create sed mapping from tree hashes to commit hashes
-		git-rev-list --all --pretty=format:'/^%t/s/^%T:/%H:/' | grep -v ^commit >$TMAP
+		git rev-list --all --pretty=format:'/^%t/s/^%T:/%H:/' | grep -v ^commit >$TMAP
 		# grep trees in chronological order and convert hashes on the fly
-		git-rev-list --all $REV --pretty=format:%T | grep -v ^commit |
-		  xargs git-grep -E -e $1 | sed -f $TMAP | $OUT
+		git rev-list --all $REV --pretty=format:%T | grep -v ^commit |
+		  xargs git grep -E -e $1 | sed -f $TMAP | $OUT
 		;;
 */yyinfo)	test -n "$*" && exec yyhelp
 		REPO="`cd \"$gitdir/..\" && basename \"$(pwd)\" `"
-		REPODIR="`git-rev-parse --show-cdup`" ; test -z "$REPODIR" && REPODIR=.
-		OC="`git-rev-parse --verify origin 2>/dev/null`"; test -n "$OC" && OC="`date -d \"$(git-log -n1 --pretty=format:%cD $OC)\" '+%F %T %z'` # $OC"
-		HC="`git-rev-parse --verify HEAD   2>/dev/null`"; test -n "$HC" && HC="`date -d \"$(git-log -n1 --pretty=format:%cD $HC)\" '+%F %T %z'` # $HC"
-		test -n "$SVNURL" && SVNREV=`git-cat-file commit HEAD | tail -n1 | sed -n '/^git-svn-id:.*/ { s/^[^@]\+@\([0-9]\+\).*/\1/; p; }'`
+		REPODIR="`git rev-parse --show-cdup`" ; test -z "$REPODIR" && REPODIR=.
+		OC="`git rev-parse --verify origin 2>/dev/null`"; test -n "$OC" && OC="`date -d \"$(git log -n1 --pretty=format:%cD $OC)\" '+%F %T %z'` # $OC"
+		HC="`git rev-parse --verify HEAD   2>/dev/null`"; test -n "$HC" && HC="`date -d \"$(git log -n1 --pretty=format:%cD $HC)\" '+%F %T %z'` # $HC"
+		test -n "$SVNURL" && SVNREV=`git cat-file commit HEAD | tail -n1 | sed -n '/^git-svn-id:.*/ { s/^[^@]\+@\([0-9]\+\).*/\1/; p; }'`
 		true			&& echo "GIT-Repo: $REPO"
 		true			&& echo "URL:      $GITURL"
 		true			&& echo "Path:     $REPODIR"
@@ -222,44 +242,48 @@ _EOF_HERE
 		test -n "$OC"		&& echo "Origin:   $OC"
 		;;
 */yylsbranches)	test -n "$*" && exec yyhelp
-		exec git-branch $COLOR -a ;;
+		exec git branch $COLOR -a ;;
 */yylstags)	test -n "$*" && exec yyhelp
-		exec git-tag -l '.*' ;;
+		# around git-1.5.3.4, the 'git-tag -l' pattern was changed from regexp to shell-glob
+		# we'll work around that here by using both variants
+		{ git tag -l '*' ; git tag -l '.*' ; } | sort | uniq ;;
 */yypull)	test -n "$*" && exec yyhelp
-		$gitsvn && exec git-svn rebase || exec git-pull ;;
+		$gitsvn && require_master "`basename $0`: refusing to pull with git-svn onto branch other than master"
+		$gitsvn && exec git svn rebase || exec git pull ;;
 */yypushpull)	test -n "$*" && exec yyhelp
-		$gitsvn && exec git-svn dcommit
-		git-push && git-pull || exit $? ;;
-*/yyremove)	exec git-update-index --force-remove -- "$@" ;;
+		$gitsvn && require_master "`basename $0`: refusing to push with git-svn from branch other than master"
+		$gitsvn && exec git svn dcommit
+		git push && git pull || exit $? ;;
+*/yyremove)	exec git update-index --force-remove -- "$@" ;;
 */yyreset)	test -n "$*" && exec yyhelp
-		exec git-checkout -f HEAD ;;
-*/yyrestore)	git-ls-tree --full-name -r HEAD -- "$@" | git-update-index --index-info # resurrect deleted
-		exec git-checkout-index -f -u -- "$@" ;;
+		exec git checkout -f HEAD ;;
+*/yyrestore)	git ls-tree --full-name -r HEAD -- "$@" | git update-index --index-info # resurrect deleted
+		exec git checkout-index -f -u -- "$@" ;;
 */yystatus)	test -z "$*" || match '-[tuc]' "$*" || exec yyhelp
-		git-update-index --refresh > /dev/null	# update stat info
+		git update-index --refresh > /dev/null	# update stat info
 		! match '*-[tc]*' "$*" &&	# list unknown files
-		  git-ls-files --others --directory --exclude-from=$gitdir/info/exclude --exclude-per-directory=.gitignore |
+		  git ls-files --others --directory --exclude-from=$gitdir/info/exclude --exclude-per-directory=.gitignore |
 		    { test " $*" != " -u" && sed 's,^,?  ,' || sed 's,/$,,' ; }
 		test " $*" != " -u" && {	# list non-unknown files
 		  if test -z "$githead" ; then	# empty history, list new files
-		    git-ls-files | sed 's/^/A  /'
+		    git ls-files | sed 's/^/A  /'
 		  else				# list known files, path-relative
 		    list_committable
 		  fi
-		} | { test " $*" != " -c" && cat || sed 's/^[^ ]  \([^ ].*\)/* \1:/' ; } ;;
+		} | { test " $*" != " -c" && cat || { echo ; sed 's/^[^ ]  \([^ ].*\)/* \1:/' ; } ; } ;;
 */yytag)	(set -e && test -n "$*" && test -z "$3" && ! match "* -*" " $*" ) || exec yyhelp
-		test -n "$2" && exec git-tag "$1" "$2"
-		exec git-tag "$1" ;;
+		test -n "$2" && exec git tag "$1" "$2"
+		exec git tag "$1" ;;
 */yytagdel)	test -z "$*" && exec yyhelp
 		match "* -*" " $*" && exec yyhelp
-		exec git-tag -d "$1" ;;
+		exec git tag -d "$1" ;;
 */yyuncommit)	test -n "$*" && exec yyhelp
-		exec git-reset --soft HEAD~1 ;;
+		exec git reset --soft HEAD~1 ;;
 */yyview)	test -n "$*" && exec yyhelp
 		exec gitk --all -d & ;;
 */yywarp)	test -z "$*" && exec yyhelp
-		git-rev-parse --verify "$1" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $1"
-		exec git-checkout "$1" ;;
+		git rev-parse --verify "$1" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $1"
+		exec git checkout "$1" ;;
 *)		test "$YYHELP" || { echo "`basename \"$0\"`: No such command" >&2 ; exit 9 ; } ;;
 esac
 test "$YYHELP" || exit 0 # successful command execution
