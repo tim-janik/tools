@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# die with descriptive error messages
+SCRIPTNAME=`basename $0`
+function die  { e="$1"; shift; [ -n "$*" ] && echo "$SCRIPTNAME: $*"; exit "$e" ; }
+function warn { [ -n "$*" ] && echo "$SCRIPTNAME: warning: $*"; }
+
 # default config
 CWD=
 SOURCES=
@@ -17,11 +22,12 @@ SSHACCOUNT=
 SSHPORT=
 SSHKEYFILE=
 unset LINKDESTS	# array of --link-dest arguments
-
-# die with descriptive error messages
-SCRIPTNAME=`basename $0`
-function die  { e="$1"; shift; [ -n "$*" ] && echo "$SCRIPTNAME: $*"; exit "$e" ; }
-function warn { [ -n "$*" ] && echo "$SCRIPTNAME: warning: $*"; }
+if [ -z "$RSYNC_BINARY" ]; then
+  BINRSYNC=rsync
+else
+  BINRSYNC=`readlink -f "$RSYNC_BINARY"`
+  [ -x "$BINRSYNC" ] || die 1 "Failed to execute rsync binary: $BINRSYNC"
+fi
 
 # usage and help
 function usagedie { # exitcode message...
@@ -43,6 +49,7 @@ function usagedie { # exitcode message...
   echo "  -c		perform checksum based file content comparisons"
   echo "  --one-file-system"
   echo "  -x            don’t cross filesystem boundaries"
+  echo "  --version     script and rsync versions"
   echo "DESCRIPTION:"
   echo "  This script creates full or reverse incremental backups using the"
   echo "  rsync(1) command. Files are hard linked from the most recent backup"
@@ -76,6 +83,7 @@ while test $# -ne 0 -a $parse_options = 1; do
     -s)			SSHKEYFILE="$2" ; shift ;;
     -P)			SSHPORT="$2" ; shift ;;
     -L)			LINKDESTS[$[${#LINKDESTS[@]}+1]]="$2" ; shift ;;
+    --version)		echo "sayebackup.sh version 0"; $BINRSYNC --version | head -n1 ; exit 0 ;;
     --)  		parse_options=0 ;;
     -*)		     	usagedie 1 "option not supported: $1" ;;
     *)		     	parse_options=0 ; break ;;
@@ -157,7 +165,7 @@ VANISHING_PATTERN='^(file has vanished: |rsync warning: some files vanished befo
 
 # run rsync, destination full/, reusing lasttransfer/, backup dir is incremental/
 nice -n15 ionice -c3 \
-  rsync $RSYNC_QUIET "$RSHCOMMAND" "$EXCLUDEFILE" $RSYNC_OPTIONS $MODE \
+  $BINRSYNC $RSYNC_QUIET "$RSHCOMMAND" "$EXCLUDEFILE" $RSYNC_OPTIONS $MODE \
 	$LASTLINKDIR "${LINKDESTS[@]}" "$@" "$TMPDIR/full" \
 	2> >(egrep -v "$VANISHING_PATTERN")
 RSYNC_CODE="$?"
