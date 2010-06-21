@@ -39,6 +39,11 @@ function exit_err() {
 	test -n "$*" && { echo -ne "$*\n" >&2 ; }
 	exit $ecode
 }
+function less_if_not_empty() {
+	if read first_line; then
+	  ( echo $first_line ; cat ) | less -R "$@"
+        fi
+}
 
 # configure for terminals with ANSI color escapes
 TAB=$'\t'	# joe(1) syntax highlighting is broken for $''
@@ -47,7 +52,7 @@ test -t 1 -a -t 0 && match $'*\e[31m*' "`tput setaf 1 2>/dev/null`" && {
         INTERACTIVE=true
 	SETBOLD=echo\ -ne\ '\e[1m' ; SETNORM=echo\ -ne\ '\e[0m'
 	BOLD=$'\e[1m'; GREEN=$'\e[32m'; TURK=$'\e[36m'; NORM=$'\e[0m';
-	COLOR=--color ; OUT=less\ -R
+	COLOR=--color ; OUT=less_if_not_empty
 	#' # work around syntax highlighting in old joe(1) versions wrg $''
 	# we hardcode ANSI escapes directly because less -R can only deal with \e[*m
 }
@@ -244,9 +249,8 @@ _EOF_HERE
 */yylsbranches)	test -n "$*" && exec yyhelp
 		exec git branch $COLOR -a ;;
 */yylstags)	test -n "$*" && exec yyhelp
-		# around git-1.5.3.4, the 'git-tag -l' pattern was changed from regexp to shell-glob
-		# we'll work around that here by using both variants
-		{ git tag -l '*' ; git tag -l '.*' ; } | sort | uniq ;;
+		# FIXME: this depends on post git-1.5.3.4
+		git tag -n1 -l '*' ;;
 */yypull)	test -n "$*" && exec yyhelp
 		$gitsvn && require_master "`basename $0`: refusing to pull with git-svn onto branch other than master"
 		$gitsvn && exec git svn rebase || exec git pull ;;
