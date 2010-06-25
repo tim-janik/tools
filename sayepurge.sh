@@ -18,14 +18,14 @@ FAKERUN=false
 
 # die with descriptive error messages
 SCRIPTNAME=`basename $0`
-function die  { e="$1"; shift; [ -n "$*" ] && echo "$SCRIPTNAME: $*"; exit "$e" ; }
-function warn { [ -n "$*" ] && echo "$SCRIPTNAME: warning: $*"; }
+function die  { e="$1"; shift; [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2; exit "$e" ; }
+function warn { [ -n "$*" ] && echo "$SCRIPTNAME: warning: $*" >&2; }
 function msg  { $INFOMSG && echo "$*"; }
 
 # usage and help
 function usagedie { # exitcode message...
   e="$1"; shift;
-  [ -n "$*" ] && echo "$SCRIPTNAME: $*"
+  [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2
   echo "Usage: $SCRIPTNAME [options] sources..."
   echo "OPTIONS:"
   echo "  -i            purge/reduce incremental backups"
