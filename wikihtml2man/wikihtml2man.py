@@ -11,8 +11,8 @@ def dbg_print (*args):
   o = ' '.join (args)
   if len (o) and o[-1] != '\n': o += '\n'
   print >>sys.stderr, o
-def die (msg):
-  print >>sys.stderr, 'ERROR:', msg
+def die (*args):
+  print >>sys.stderr, 'ERROR:', ' '.join (args)
   exit (-1)
 def qq (string):        # man-page quoting of special characters
   s = re.sub (r'([.\\-])', r'\\\1', string)
@@ -258,6 +258,14 @@ def gen_man_title (title, section, updated, release, manual):
   s += ' ' + dq (updated) + ' ' + dq (release) + ' ' + dq (manual)
   return s
 
+# === help page ===
+def help_page (topic):
+  import os
+  try:
+    os.execvp ('man', ('man', topic))
+  except:
+    die ('Failed to execute help browser for:', topic)
+
 # === main ===
 # Main function for manual page genration. The process works as follows:
 # * Parse HTML to XML.
@@ -272,7 +280,7 @@ def main (argv = ()):
   lo = ['help', 'debug']
   options,args = getopt.gnu_getopt (argv[1:], so, lo)
   for arg,val in options:
-    if arg == '-h' or arg == '--help': die ('need help()')
+    if arg == '-h' or arg == '--help': help_page ('wikihtml2man')
     if arg == '-g' or arg == '--debug': global dbg; dbg = dbg_print
     if arg == '-t': th[0] = val
     if arg == '-s': th[1] = val
@@ -285,7 +293,7 @@ def main (argv = ()):
   # load HTML
   try:
     f = open (input_name)
-  except ex:
+  except IOError, ex:
     die ("Failed to read input: " + input_name + ": " + str (ex))
   # parse HTML into XML tree
   import html5lib
