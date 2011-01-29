@@ -4,10 +4,16 @@
 import re, sys, time
 from xml import etree
 from xml.etree import ElementTree
-def die (msg): print >>sys.stderr, 'ERROR:', msg ; exit (-1)
 
-odebug = sys.stderr # open ('/dev/null', 'w') # sys.stderr
-
+# === Utilities ===
+dbg = None
+def dbg_print (*args):
+  o = ' '.join (args)
+  if len (o) and o[-1] != '\n': o += '\n'
+  print >>sys.stderr, o
+def die (msg):
+  print >>sys.stderr, 'ERROR:', msg
+  exit (-1)
 def qq (string):        # man-page quoting of special characters
   s = re.sub (r'([.\\-])', r'\\\1', string)
   s = re.sub ('\n', ' ', s)
@@ -26,42 +32,8 @@ def textr (node):       # retrieve plain text from node recursively
     return s
   return childtext (node, False)
 
-def xml2events (node, o):
-  unignore = [ -1 ]
-  def noder (node):
-    if gman_name_parent == node: unignore[0] += 1
-    if gman_name_node == node: unignore[0] += 1
-    txt = node.tag if isinstance (node.tag, basestring) else '!--'
-    if unignore[0] > 0 and txt != '!--':
-      o.start (txt, node.attrib)
-      txt = node.text if isinstance (node.text, basestring) else ''
-      if txt: o.data (unicode (txt))
-    for c in node.getchildren():
-      noder (c)
-    txt = node.tag if isinstance (node.tag, basestring) else '--'
-    if unignore[0] > 0 and txt != '--':
-      o.end (txt, node.attrib)
-    if gman_name_parent == node: unignore[0] -= 1
-    if unignore[0] > 0:
-      txt = node.tail if isinstance (node.tail, basestring) else ''
-      if txt: o.data (unicode (txt))
-  noder (node)
-  o.close()
-class XmlEventDebug:
-  def start (self, tag, attrib):        print '<%s ...>' % tag,
-  def end (self, tag):                  print '</%s>' % tag,
-  def data (self, data):
-    # print type (data), repr (data)
-    print data.encode ('utf8', 'ignore'),
-  def close (self):                     pass
-#xml2events (root, XmlEventDebug()); exit (1)
-
-# Manual page heuristics:
-# - We must find the 'NAME' section to identify a manual page
-# - Assuming all HTML sections have the same parent, we can discard unrelated HTML crap
-# - We try to match the TH information from a <Hx/> section preceeding NAME
-# - TH: title section updated release manual
-
+# === Heuristics ===
+# Man page information guessed by heuristics.
 gman_name_parent = None
 gman_name_node = None
 gman_name_def = ('', '')
@@ -71,6 +43,13 @@ gman_updated = time.strftime ('%Y-%m-%d')
 gman_release = ''
 gman_manual = ''
 gman_server_path = ''
+
+# === gman_heuristics ===
+# Use heuristics to guess several man page bits:
+# * Find the 'NAME' section to identify a manual page.
+# * Find 'NAME' section parent, assuming all relevant HTML sections are its ancestors.
+# * Try to match man page title and section from a header preceeding 'NAME'.
+# * Try to parse Updated, Release, Manual bits from title header section.
 def gman_heuristics (node):
   capture = [] # title section contents
   gman_script_path = ''
@@ -131,6 +110,45 @@ def gman_heuristics (node):
   if gman_server_path and gman_script_path:
     gman_server_path += gman_script_path
 
+
+# === xml2events ===
+# Generate start/data/end events for man generation from XML tree
+# Discard most unrelated HTML bits, by filtering nodes out that
+# don't contain the 'NAME' section.
+def xml2events (node, o):
+  unignore = [ -1 ]
+  def noder (node):
+    if gman_name_parent == node: unignore[0] += 1
+    if gman_name_node == node: unignore[0] += 1
+    txt = node.tag if isinstance (node.tag, basestring) else '!--'
+    if unignore[0] > 0 and txt != '!--':
+      o.start (txt, node.attrib)
+      txt = node.text if isinstance (node.text, basestring) else ''
+      if txt: o.data (unicode (txt))
+    for c in node.getchildren():
+      noder (c)
+    txt = node.tag if isinstance (node.tag, basestring) else '--'
+    if unignore[0] > 0 and txt != '--':
+      o.end (txt, node.attrib)
+    if gman_name_parent == node: unignore[0] -= 1
+    if unignore[0] > 0:
+      txt = node.tail if isinstance (node.tail, basestring) else ''
+      if txt: o.data (unicode (txt))
+  noder (node)
+  o.close()
+class XmlEventDebug:
+  def start (self, tag, attrib):        print '<%s ...>' % tag,
+  def end (self, tag):                  print '</%s>' % tag,
+  def data (self, data):
+    # print type (data), repr (data)
+    print data.encode ('utf8', 'ignore'),
+  def close (self):                     pass
+#xml2events (root, XmlEventDebug()); exit (-1)
+
+
+# === ManEvents ===
+# Generate roff markup from XML events by matching corresponding
+# HTML elements.
 HEADINGS = ('h1', 'h2')
 SUBHEADS = ('h3', 'h4', 'h5', 'h6')
 PREFORMS = ('pre')
@@ -232,7 +250,71 @@ class ManEvents:
   def close (self):                     # XMLParser.close
     pass
 
-pass
+# === gen_man_title ===
+# Generate man page title string;
+# Syntax: .TH <title> <section> <updated> <release> <manual>
+def gen_man_title (title, section, updated, release, manual):
+  s = '.TH ' + dq (title).upper() + ' ' + dq (section)
+  s += ' ' + dq (updated) + ' ' + dq (release) + ' ' + dq (manual)
+  return s
+
+# === main ===
+# Main function for manual page genration. The process works as follows:
+# * Parse HTML to XML.
+# * Use heuristics on XML to detect man page content.
+# * Process XML events, thereby generating man page roff source
+# * Output of roff source.
+def main (argv = ()):
+  # some arg parsing
+  import getopt
+  th = [ None, None, None, None, None ]
+  so = 'hgt:s:u:r:m:'
+  lo = ['help', 'debug']
+  options,args = getopt.gnu_getopt (argv[1:], so, lo)
+  for arg,val in options:
+    if arg == '-h' or arg == '--help': die ('need help()')
+    if arg == '-g' or arg == '--debug': global dbg; dbg = dbg_print
+    if arg == '-t': th[0] = val
+    if arg == '-s': th[1] = val
+    if arg == '-u': th[2] = val
+    if arg == '-r': th[3] = val
+    if arg == '-m': th[4] = val
+  if not args:
+    die ("Missing input file")
+  input_name = args[0]
+  # load HTML
+  try:
+    f = open (input_name)
+  except ex:
+    die ("Failed to read input: " + input_name + ": " + str (ex))
+  # parse HTML into XML tree
+  import html5lib
+  from html5lib import treebuilders
+  tbuilder = treebuilders.getTreeBuilder ("etree", ElementTree)
+  parser = html5lib.HTMLParser (tree = tbuilder, namespaceHTMLElements = False)
+  root = parser.parse (f)
+  if dbg: dbg ("XML-DUMP:\n", etree.ElementTree.tostring (root))
+  # run heuristics on XML nodes
+  gman_heuristics (root)
+  if not gman_name_node:
+    die ("Failed to detect required manual page section: NAME")
+  # generate man roff
+  mev = ManEvents()
+  xml2events (root, mev)
+  if th[0] == None: th[0] = gman_name_def[0] or gman_pagetitle
+  if th[1] == None: th[1] = gman_section
+  if th[2] == None: th[2] = gman_updated
+  if th[3] == None: th[3] = gman_release
+  if th[4] == None: th[4] = gman_manual
+  mpage = gen_man_title (*th) + mev.out
+  # output
+  print unicode (mpage).encode ('utf8', 'ignore')
+  return 0
+
+if __name__ == '__main__':
+  import sys
+  sys.exit (main (sys.argv))
+
 ###
 # TODO:
 # - add base url option
@@ -248,33 +330,3 @@ pass
 # - option: to match "SEE ALSO"
 # - show links only for section matches (SEE ALSO) else italic
 # - discard hrefs for manual page links
-
-# parse (load) XML tree
-if 1:
-  import html5lib
-  from html5lib import treebuilders
-  from html5lib import sanitizer
-  f = open ("page.html")
-  tbuilder = treebuilders.getTreeBuilder ("etree", ElementTree)
-  parser = html5lib.HTMLParser (tree = tbuilder,
-                                # tokenizer = sanitizer.HTMLSanitizer,
-                                namespaceHTMLElements = False)
-  root = parser.parse (f)
-  if 0:
-    import pickle
-    pickle.dump (root, open ('x.pkl', 'wb'), -1)
-    exit()
-elif 1:
-  import pickle
-  root = pickle.load (open ('x.pkl'))
-#print etree.ElementTree.tostring (root); exit (1)
-
-gman_heuristics (root)
-
-mev = ManEvents()
-xml2events (root, mev)
-th = '.TH ' + dq (gman_name_def[0] or gman_pagetitle).upper() + ' ' + dq (gman_section)
-th += ' ' + dq (gman_updated) + ' ' + dq (gman_release) + ' ' + dq (gman_manual)
-print th
-print unicode (mev.out).encode ('utf8', 'ignore')
-exit (0)
