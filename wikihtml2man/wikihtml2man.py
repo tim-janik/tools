@@ -163,6 +163,8 @@ class ManEvents:
     self.listn = 0
     self.ignore = 0
     self.preserve = 0
+    self.sstart = 0
+    self.sname = '' # section name
   def push (self, transform):
     self.transforms += [ transform ]
   def pop (self):
@@ -192,16 +194,18 @@ class ManEvents:
       self.nlappend ('.IP "%2u." 4\n' % self.listn)
     else: # if self.list == 'bullet':
       self.nlappend ('.IP \\(bu 2\n')
-  def abslink (self, attrib):
+  def uselink (self, attrib):
     url = attrib.get ('href', '')
-    return url and '://' in url[:9]
+    link_section = re.match ('SEE\s*ALSO', self.sname.strip(), re.IGNORECASE)
+    abslink = '://' in url[:9]
+    return url and link_section and abslink
   def start (self, tag, attrib):        # opening tag
     if self.ignore:                                                     self.ignore += 1
     elif re.search (r'\beditsection\b', attrib.get ('class', '')):      self.ignore += 1
     elif re.search (r'\bprintfooter\b', attrib.get ('class', '')):      self.ignore = 9999999 # done
     if self.ignore:                     return
-    elif tag.lower() in HEADINGS:       self.nlappend ('\n.SH '); self.push (self.tupper)
-    elif tag.lower() in SUBHEADS:       self.nlappend ('.SS ')
+    elif tag.lower() in HEADINGS:       self.nlappend ('\n.SH '); self.push (self.tupper); self.sstart = len (self.out)
+    elif tag.lower() in SUBHEADS:       self.nlappend ('.SS '); self.sstart = len (self.out)
     elif tag.lower() == BOLDS:          self.out += r'\fB'
     elif tag.lower() == ITALICS:        self.out += r'\fI'
     elif tag.lower() == PREFORMS:       self.rstripa ('\n.EX\n'); self.preserve += 1
@@ -214,12 +218,12 @@ class ManEvents:
     elif tag.lower() == 'li':           self.listitem(); self.push (self.tlstrip)
     elif tag.lower() == 'p' and not self.out.endswith('\n\n'): self.nlappend ('\n')
     elif tag.lower() == 'a':
-      if self.abslink (attrib):         self.nlappend ('.UR ' + attrib['href'] + '\n')
+      if self.uselink (attrib):         self.nlappend ('.UR ' + attrib['href'] + '\n')
       else:                             self.out += r'\fI'
   def end (self, tag, attrib):          # closing tag
     if self.ignore:                     self.ignore -= 1; return
-    elif tag.lower() in HEADINGS:       self.rstripa ('\n'); self.pop()
-    elif tag.lower() in SUBHEADS:       self.rstripa ('\n')
+    elif tag.lower() in HEADINGS:       self.rstripa ('\n'); self.pop(); self.sname = self.out[self.sstart:]
+    elif tag.lower() in SUBHEADS:       self.rstripa ('\n'); self.sname = self.out[self.sstart:]
     elif tag.lower() == BOLDS:          self.out += r'\fR'
     elif tag.lower() == ITALICS:        self.out += r'\fR'
     elif tag.lower() == PREFORMS:       self.nlappend ('.EE\n'); self.preserve -= 1
@@ -228,7 +232,7 @@ class ManEvents:
     elif tag.lower() == 'dl':           self.nesting (-1)
     elif tag.lower() == 'li':           self.pop()
     elif tag.lower() == 'a':
-      if self.abslink (attrib):         self.nlappend ('.UE\n')
+      if self.uselink (attrib):         self.nlappend ('.UE\n')
       else:                             self.out += r'\fR'
   def data (self, data):                # text?
     if self.ignore: return
@@ -291,10 +295,19 @@ def main (argv = ()):
     die ("Missing input file")
   input_name = args[0]
   # load HTML
-  try:
-    f = open (input_name)
-  except IOError, ex:
-    die ("Failed to read input: " + input_name + ": " + str (ex))
+  if re.match ('\w+:', input_name):
+    import urllib2
+    req = urllib2.Request (args[0])
+    req.add_header ('User-Agent', 'wikihtml2man/0.1')
+    try:
+      f = urllib2.urlopen (req)
+    except IOError, ex:
+      die ("Failed to access URL: " + input_name + ": " + str (ex))
+  else:
+    try:
+      f = open (input_name)
+    except IOError, ex:
+      die ("Failed to read input: " + input_name + ": " + str (ex))
   # parse HTML into XML tree
   import html5lib
   from html5lib import treebuilders
@@ -326,13 +339,8 @@ if __name__ == '__main__':
 ###
 # TODO:
 # - add base url option
-# - add options for TH bits
-# - test paragraph separations, need .br ?
 # - test hyphenation and backslash uses that required qq()
 # - table? see man -7
-# - test parser with multiple mediawiki themes
-# - test error message for missing NAME
-# - format SEE ALSO sections nicer, give up justify? insert br/ ?
 # - render links as italics if not in "SEE ALSO", add option to
 # - option: to match NAME
 # - option: to match "SEE ALSO"
