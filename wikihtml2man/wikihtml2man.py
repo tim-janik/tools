@@ -218,7 +218,7 @@ class ManEvents:
     elif tag.lower() == 'li':           self.listitem(); self.push (self.tlstrip)
     elif tag.lower() == 'p' and not self.out.endswith('\n\n'): self.nlappend ('\n')
     elif tag.lower() == 'a':
-      if self.uselink (attrib):         self.nlappend ('.UR ' + attrib['href'] + '\n')
+      if self.uselink (attrib):         pass # self.nlappend ('.UR ' + attrib['href'] + '\n')
       else:                             self.out += r'\fI'
   def end (self, tag, attrib):          # closing tag
     if self.ignore:                     self.ignore -= 1; return
@@ -232,7 +232,7 @@ class ManEvents:
     elif tag.lower() == 'dl':           self.nesting (-1)
     elif tag.lower() == 'li':           self.pop()
     elif tag.lower() == 'a':
-      if self.uselink (attrib):         self.nlappend ('.UE\n')
+      if self.uselink (attrib):         self.out += ' <%s>' % attrib['href'] # self.nlappend ('.UE\n')
       else:                             self.out += r'\fR'
   def data (self, data):                # text?
     if self.ignore: return
