@@ -284,7 +284,10 @@ _EOF_HERE
 */yyuncommit)	test -n "$*" && exec yyhelp
 		exec git reset --soft HEAD~1 ;;
 */yyview)	test -n "$*" && exec yyhelp
-		exec gitk --all -d & ;;
+    		if which gitg 2>/dev/null 1>&2 && false
+		then exec gitg --all &
+		else exec gitk --all -d &
+		fi ;;
 */yywarp)	test -z "$*" && exec yyhelp
 		git rev-parse --verify "$1" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $1"
 		exec git checkout "$1" ;;
