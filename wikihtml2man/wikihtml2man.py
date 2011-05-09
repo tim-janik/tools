@@ -40,7 +40,7 @@ gman_name_def = ('', '')
 gman_pagetitle = ''
 gman_section = '?'
 gman_updated = time.strftime ('%Y-%m-%d')
-gman_release = ''
+gman_origin = ''
 gman_manual = ''
 gman_server_path = ''
 
@@ -55,7 +55,7 @@ def gman_heuristics (node):
   gman_script_path = ''
   def recurse (node, parent):
     global gman_name_parent, gman_name_node, gman_name_def
-    global gman_pagetitle, gman_section, gman_updated, gman_release, gman_manual
+    global gman_pagetitle, gman_section, gman_updated, gman_origin, gman_manual
     headings = ('h1', 'h2', 'h3', 'h4', 'h5', 'h6')
     tag = node.tag if isinstance (node.tag, basestring) else '!--'
     text = textr (node)
@@ -72,8 +72,8 @@ def gman_heuristics (node):
         capture[0] += '\n'
         m = re.search ('\nUpdated:\s+([^\n]+?)\s*\n', capture[0])
         gman_updated = m.group (1) if m else gman_updated
-        m = re.search ('\nRelease:\s+([^\n]+?)\s*\n', capture[0])
-        gman_release = m.group (1) if m else gman_release
+        m = re.search ('\n(Resource|Release):\s+([^\n]+?)\s*\n', capture[0])
+        gman_origin = m.group (2) if m else gman_origin
         m = re.search ('\nManual:\s+([^\n]+?)\s*\n', capture[0])
         gman_manual = m.group (1) if m else gman_manual
         capture.pop()
@@ -325,7 +325,7 @@ def main (argv = ()):
   if th[0] == None: th[0] = gman_name_def[0] or gman_pagetitle
   if th[1] == None: th[1] = gman_section
   if th[2] == None: th[2] = gman_updated
-  if th[3] == None: th[3] = gman_release
+  if th[3] == None: th[3] = gman_origin
   if th[4] == None: th[4] = gman_manual
   mpage = gen_man_title (*th) + mev.out
   # output
@@ -339,6 +339,8 @@ if __name__ == '__main__':
 ###
 # TODO:
 # - add base url option
+# - concatenate consequtive <dd/> tags
+# - convert xxxx.1 man-page URLs to xxxx(1) (discard link target)
 # - test hyphenation and backslash uses that required qq()
 # - table? see man -7
 # - render links as italics if not in "SEE ALSO", add option to
