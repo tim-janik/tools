@@ -5,6 +5,8 @@ import re, sys, time
 from xml import etree
 from xml.etree import ElementTree
 
+MYPACKAGE, MYVERSION = 'Testbit.eu/Tools', '0.1'
+
 # === Utilities ===
 dbg = None
 def dbg_print (*args):
@@ -269,6 +271,11 @@ def help_page (topic):
     os.execvp ('man', ('man', topic))
   except:
     die ('Failed to execute help browser for:', topic)
+def print_version (topic):
+  print topic, "(%s)" % MYPACKAGE, MYVERSION
+  print "Copyright (C) 2011 Tim Janik"
+  print "Redistributable under GNU GPLv3 or later: http://www.gnu.org/licenses/gpl.html"
+  sys.exit (0)
 
 # === main ===
 # Main function for manual page genration. The process works as follows:
@@ -281,10 +288,11 @@ def main (argv = ()):
   import getopt
   th = [ None, None, None, None, None ]
   so = 'hgt:s:u:r:m:'
-  lo = ['help', 'debug']
+  lo = ['help', 'debug', 'version']
   options,args = getopt.gnu_getopt (argv[1:], so, lo)
   for arg,val in options:
     if arg == '-h' or arg == '--help': help_page ('wikihtml2man')
+    if arg == '--version': print_version ('wikihtml2man')
     if arg == '-g' or arg == '--debug': global dbg; dbg = dbg_print
     if arg == '-t': th[0] = val
     if arg == '-s': th[1] = val
