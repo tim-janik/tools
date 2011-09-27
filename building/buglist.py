@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (C) 2007 Imendio AB
+# Copyright (C) 2008,2011 Lanedo GmbH
 #
 # Author: Tim Janik
 #
@@ -23,18 +23,18 @@ import sys, os, re, urllib, csv
 bugurls = (
   ('gb',        	'http://bugzilla.gnome.org/buglist.cgi?bug_id='),
   ('gnome',     	'http://bugzilla.gnome.org/buglist.cgi?bug_id='),
-  ('fb',        	'https://bugs.freedesktop.org/buglist.cgi?bug_id='),
+  ('fd',        	'https://bugs.freedesktop.org/buglist.cgi?bug_id='),
   ('freedesktop',	'https://bugs.freedesktop.org/buglist.cgi?bug_id='),
   ('mb',        	'https://bugs.maemo.org/buglist.cgi?bug_id='),
   ('maemo',     	'https://bugs.maemo.org/buglist.cgi?bug_id='),
   ('nb',        	'https://projects.maemo.org/bugzilla/buglist.cgi?bug_id='),
   ('nokia',     	'https://projects.maemo.org/bugzilla/buglist.cgi?bug_id='),
-  ('ob',        	'http://bugzilla.o-hand.com/buglist.cgi?bug_id='),
-  ('o-hand',    	'http://bugzilla.o-hand.com/buglist.cgi?bug_id='),
   ('gcc',       	'http://gcc.gnu.org/bugzilla/buglist.cgi?bug_id='),
   ('libc',      	'http://sources.redhat.com/bugzilla/buglist.cgi?bug_id='),
   ('moz',       	'https://bugzilla.mozilla.org/buglist.cgi?bug_id='),
   ('mozilla',   	'https://bugzilla.mozilla.org/buglist.cgi?bug_id='),
+  ('xm',                'http://bugzilla.xamarin.com/buglist.cgi?id='),
+  ('xamarin',           'http://bugzilla.xamarin.com/buglist.cgi?id='),
 )
 
 # URL authentication handling
