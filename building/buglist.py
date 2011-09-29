@@ -16,6 +16,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 import sys, os, re, urllib, csv
+pkginstall_configvars = {
+  'PKG_VERSION' : '0.0-uninstalled',
+  #@PKGINSTALL_CONFIGVARS_IN24LINES@ # configvars are substituted upon script installation
+}
 
 # TODO:
 # - support mixing in comments.txt which has "bug# person: task"
@@ -138,7 +142,7 @@ def read_handle_bugs (config, url):
           print "% 7u (NOBUG)" % iid
 
 def help (version = False, verbose = False):
-  print "buglist.py version", "0.4"
+  print "buglist version", pkginstall_configvars['PKG_VERSION']
   if version: # version *only*
     return
   print "Usage: %s [options] <BUG-TRACKER> " % os.path.basename (sys.argv[0])
