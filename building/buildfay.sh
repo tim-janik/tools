@@ -349,7 +349,7 @@ ensure_version() {
     TEMPF="`mktemp -t yyREVfile.$$XXXXXX`" && touch $TEMPF || \
       die 9 "Failed to create temporary file"
     trap "rm -f $TEMPF" 0 HUP INT QUIT TRAP USR1 PIPE TERM
-    sed "0,/^\($REVISIONVAR_NAME\s*=\s*\)[0-9]\+/s//\1$N/" < "$REVISIONVAR_FILE" > $TEMPF \
+    sed "0,/^\(\s*$REVISIONVAR_NAME\s*=\s*\)[0-9]\+/s//\1$N/" < "$REVISIONVAR_FILE" > $TEMPF \
       && ok || fail
     mv $TEMPF "$REVISIONVAR_FILE"
     git diff -U0 "$REVISIONVAR_FILE" | sed 's/^/  > /'
