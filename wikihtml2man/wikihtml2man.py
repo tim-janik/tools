@@ -5,7 +5,10 @@ import re, sys, time
 from xml import etree
 from xml.etree import ElementTree
 
-MYPACKAGE, MYVERSION = 'Testbit.eu/Tools', '0.1'
+pkginstall_configvars = {
+  'PACKAGE' : 'dummy', 'PACKAGE_NAME' : 'dummy', 'VERSION' : '0.0', 'REVISION' : 'uninstalled',
+  #@PKGINSTALL_CONFIGVARS_IN24LINES@ # configvars are substituted upon script installation
+}
 
 # === Utilities ===
 dbg = None
@@ -271,10 +274,10 @@ def help_page (topic):
     os.execvp ('man', ('man', topic))
   except:
     die ('Failed to execute help browser for:', topic)
-def print_version (topic):
-  print topic, "(%s)" % MYPACKAGE, MYVERSION
-  print "Copyright (C) 2011 Tim Janik"
-  print "Redistributable under GNU GPLv3 or later: http://www.gnu.org/licenses/gpl.html"
+def print_version():
+  print "wikihtml2man %s (%s, %s)" % (pkginstall_configvars['VERSION'],
+                                      pkginstall_configvars['PACKAGE_NAME'], pkginstall_configvars['REVISION'])
+  print "Redistributable under GNU GPLv3 or later: http://gnu.org/licenses/gpl.html"
   sys.exit (0)
 
 # === main ===
@@ -292,7 +295,7 @@ def main (argv = ()):
   options,args = getopt.gnu_getopt (argv[1:], so, lo)
   for arg,val in options:
     if arg == '-h' or arg == '--help': help_page ('wikihtml2man')
-    if arg == '--version': print_version ('wikihtml2man')
+    if arg == '--version': print_version()
     if arg == '-g' or arg == '--debug': global dbg; dbg = dbg_print
     if arg == '-t': th[0] = val
     if arg == '-s': th[1] = val
