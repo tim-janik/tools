@@ -3,7 +3,9 @@
 #
 ## This work is provided "as is"; see: http://rapicorn.org/LICENSE-AS-IS
 
-MYVERSION="buildfay version 20100930"
+MYPACKAGE=dummy; MYVERSION=0.0; MYREVISION=uninstalled;
+#@PKGINSTALL_CONFIGVARS_IN24LINES@ # configvars are substituted upon script installation
+
 # 20110930: renamed script to buildfay
 # 20110929: implemented 'describe' build version
 # 20110407: extract 'contributors' from NEWS files
@@ -81,7 +83,10 @@ while test $# -ne 0 -a $parse_options = 1; do
     -U)		REMOTE_URL="$2" ; shift ;;
     -V)		VERSION="$2" ; shift ;;
     -X)		CONTREXIT=1 ;;
-    -v|--version) echo "$MYVERSION" ; exit 0 ;;
+    -v|--version)
+      		echo "buildfay $MYVERSION ($MYPACKAGE, $MYREVISION)" ;
+      		echo "Redistributable under GNU GPLv3 or later: http://gnu.org/licenses/gpl.html" ;
+		exit 0 ;;
     --)		parse_options=0 ;;
     *)		[ -z "$COMMAND" ] || usage 1
 		COMMAND="$1"
