@@ -32,7 +32,7 @@ fi
 # usage and help
 function usagedie { # exitcode message...
   e="$1"; shift;
-  [ -n "$*" ] && echo "$SCRIPTNAME: $*"
+  [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2
   echo "Usage: $SCRIPTNAME [options] sources..."
   echo "OPTIONS:"
   echo "  -i		make reverse incremental backup"
