@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # die with descriptive error messages
-SCRIPTNAME=`basename $0`
-function die  { e="$1"; shift; [ -n "$*" ] && echo "$SCRIPTNAME: $*"; exit "$e" ; }
-function warn { [ -n "$*" ] && echo "$SCRIPTNAME: warning: $*"; }
+SCRIPTNAME=`basename $0` ; STARTPWD=`pwd`
+function die  { e="$1"; shift; [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2; exit "$e" ; }
+function warn { [ -n "$*" ] && echo "$SCRIPTNAME: warning: $*" >&2; }
 
 # default config
 CWD=
