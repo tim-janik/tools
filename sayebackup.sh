@@ -157,7 +157,7 @@ else
     ln -s "../$LAST" "$TMPDIR/lasttransfer"
     LASTLINKDIR="--link-dest=../lasttransfer"
   }
-  MODE="-axH"
+  MODE="-aH"
 fi
 
 # work around bogus "file vanished" messages, see https://bugzilla.samba.org/show_bug.cgi?id=3653
