@@ -110,11 +110,12 @@ RSHCOMMAND="--rsh=ssh -oBatchMode=yes -oStrictHostKeyChecking=no -oCompression=y
 [ -n "$SSHPORT" ] && RSHCOMMAND="$RSHCOMMAND -p $SSHPORT"
 [ -n "$SSHACCOUNT$SSHKEYFILE" ] && {
   [ -n "$SSHACCOUNT" ] && RSHCOMMAND="$RSHCOMMAND -l $SSHACCOUNT"
-  [ -n "$SSHKEYFILE" ] && RSHCOMMAND="$RSHCOMMAND -i $SSHKEYFILE"
-  COMPRESS="--compress-level=1"
+  [ -n "$SSHKEYFILE" ] && RSHCOMMAND="$RSHCOMMAND -i $SSHKEYFILE -o IdentitiesOnly=yes"
+  COMPRESS="--compress-level=7"
 }
-echo " $*" | fgrep -q : && COMPRESS="--compress-level=1"
-[ -n "$COMPRESS" ] && RSYNC_OPTIONS="$RSYNC_OPTIONS $COMPRESS"
+echo " $*" | fgrep -q : && COMPRESS="--compress-level=7"
+[ -n "$COMPRESS" ] && RSYNC_OPTIONS="$RSYNC_OPTIONS $COMPRESS --block-size=33000"
+# block-size=33000 needed for rsync<3.0.7, see: http://samba.anu.edu.au/rsync/FAQ.html#13 # inflate (token) returned -5
 NOWDIR="$FPREFIX"`date +%Y-%m-%d-%H:%M:%S`"$FPOSTFIX"	# assumed to be sortable
 
 # find last backup for hard links
