@@ -58,7 +58,7 @@ function usagedie { # exitcode message...
   echo "  will be degraded to a reverse incremental backup, which only contains"
   echo "  differences between the current and the last backup."
   echo "  A symlink '*-current' is updated to always point at the latest backup."
-  echo "  To spare remote file transfers, -L can be used to point to an existing"
+  echo "  To reduce remote file transfers, -L can be used to point to an existing"
   echo "  local file tree from which files will be hard-linked into the backup."
   echo "  The option may be specified multiple times, relative paths are "
   echo "  interpreted relative to the -C backup dir."
