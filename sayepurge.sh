@@ -67,7 +67,7 @@ while test $# -ne 0 -a $parse_options = 1; do
     -d)                 MAXDELETE="$2" ; shift ;;
     -g)                 NIGNORES="$2" ; shift ;;
     -k)                 NKEEPS="$2" ; shift ;;
-    --fake)             FAKERUN=true ; shift ;;
+    --fake)             FAKERUN=true ;;
     --)                 parse_options=0 ;;
     -*|*)               usagedie 1 "option not supported: $1" ;;
     #*)                  parse_options=0 ; break ;;
