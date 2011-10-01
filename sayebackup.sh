@@ -60,8 +60,7 @@ function usagedie { # exitcode message...
   echo "  A symlink '*-current' is updated to always point at the latest backup."
   echo "  To reduce remote file transfers, -L can be used to point to an existing"
   echo "  local file tree from which files will be hard-linked into the backup."
-  echo "  The option may be specified multiple times, relative paths are "
-  echo "  interpreted relative to the -C backup dir."
+  echo "  The option may be specified multiple times."
   exit "$e"
 }
 
@@ -100,7 +99,7 @@ pwd | fgrep -q : && die 2 "CWD contains invalid special (rsync) character: :"
 # create --link-dest arguments with absolute pathnames
 for i in `seq ${#LINKDESTS[@]}` ; do
   ldest="${LINKDESTS[$i]}"
-  [ "${ldest:0:1}" != "/" ] && ldest="`pwd`/$ldest"
+  [ "${ldest:0:1}" != "/" ] && ldest="$STARTPWD/$ldest"
   LINKDESTS[$i]="--link-dest=$ldest"
 done
 
