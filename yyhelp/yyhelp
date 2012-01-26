@@ -258,6 +258,12 @@ _EOF_HERE
 		$gitsvn && require_master "`basename $0`: refusing to push with git-svn from branch other than master"
 		$gitsvn && exec git svn dcommit
 		git push && git pull || exit $? ;;
+#*/yyrebase)	test "$#" = 2 || exec yyhelp
+#    		BRANCH="$1"; DEST="$2"
+#		MERGEBASE=`git-merge-base "$BRANCH" "$DEST"` || exit_err 1 "`basename $0`: missing common base for: $BRANCH $DEST"
+#		echo -n "Planned: checkout $BRANCH, rebase ont $DEST, proceed? (y/N) "
+#		read answ ; test "$answ" != "y" && exit 1
+#		exec git rebase -i --onto "$DEST" "$MERGEBASE" "$BRANCH"
 */yyremove)	exec git update-index --force-remove -- "$@" ;;
 */yyreset)	test -n "$*" && exec yyhelp
 		exec git checkout -f HEAD ;;
@@ -351,6 +357,7 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyylstags                  - list tags'
 	echo -e '\tyypull                    - pull upstream sources'
 	echo -e '\tyypushpull                - push & pull upstream sources'
+	echo -e '\tyyrebase BRANCH NEWBASE   - rebase BRANCH onto NEWBASE'
 	echo -e '\tyyremove       [FILES...] - remove files from git repository'
 	echo -e '\tyyreset                   - reset (revert to HEAD) all files in the tree'
 	echo -e '\tyyrestore      [FILES...] - forcefully recheckout specific files'
