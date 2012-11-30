@@ -36,7 +36,7 @@ function usagedie { # exitcode message...
   echo "Usage: $SCRIPTNAME [options] sources..."
   echo "OPTIONS:"
   echo "  -i		make reverse incremental backup"
-  echo "  --dry		run rsync with --dry-run option"
+  echo "  --dry		run and show rsync with --dry-run option"
   echo "  --help	print usage summary"
   echo "  -C <dir>	backup directory (default: '.')"
   echo "  -E <exclfile>	file with rsync exclude list"
@@ -137,38 +137,45 @@ $INC && [ -d "$INCDIR" ] &&	die 3 "Incremental target exists already: $INCDIR"
 	EXCLUDEFILE="--exclude-from=$EXCLUDEFILE"
 }
 
-# create temporary working directory without special-:
-TMPDIR=`mktemp -d "./sayebackup_tmpXXXXXX"` || die 5 "$0: Failed to create temporary dir"
-trap 'rm -rf "$TMPDIR"' 0 HUP QUIT TRAP USR1 PIPE TERM
-
-# prepare incremental/full backups
-BACKUPDIR=
+# prepare transfer directories
 LASTLINKDIR=
-if $INC ; then
-  # clone old backup with hard links to reduce transfers
-  [ -d "$LAST" ] && {
-    cp -al "$LAST" "$TMPDIR/full" || warn "Failed to fully clone backup dir: $LAST -> $TMPDIR/full"
-  }
-  LASTLINKDIR="--link-dest=../full --backup-dir=../incremental"
-  MODE="-ab --del --ignore-errors"
+if $DRY ; then
+  TARGET_DIR="./$NOWDIR"
+  MODE="$MODE --dry-run"
 else
-  # symlink old backup to reduce transfers (and avoid special-:)
-  [ -n "$LAST" ] && {
-    ln -s "../$LAST" "$TMPDIR/lasttransfer"
-    LASTLINKDIR="--link-dest=../lasttransfer"
-  }
-  MODE="-aH"
+  # create temporary working directory without special-:
+  TMPDIR=`mktemp -d "./sayebackup_tmpXXXXXX"` || die 5 "$0: Failed to create temporary dir"
+  trap 'rm -rf "$TMPDIR"' 0 HUP QUIT TRAP USR1 PIPE TERM
+  # prepare incremental/full backups
+  if $INC ; then
+    # clone old backup with hard links to reduce transfers
+    [ -d "$LAST" ] && {
+      cp -al "$LAST" "$TMPDIR/full" || warn "Failed to fully clone backup dir: $LAST -> $TMPDIR/full"
+    }
+    LASTLINKDIR="--link-dest=../full --backup-dir=../incremental"
+    MODE="-ab --del --ignore-errors"
+  else
+    # symlink old backup to reduce transfers (and avoid special-:)
+    [ -n "$LAST" ] && {
+      ln -s "../$LAST" "$TMPDIR/lasttransfer"
+      LASTLINKDIR="--link-dest=../lasttransfer"
+    }
+    MODE="-aH"
+  fi
+  TARGET_DIR="$TMPDIR/full"
 fi
 
 # work around bogus "file vanished" messages, see https://bugzilla.samba.org/show_bug.cgi?id=3653
 VANISHING_PATTERN='^(file has vanished: |rsync warning: some files vanished before they could be transferred)'
 
 # run rsync, destination full/, reusing lasttransfer/, backup dir is incremental/
-nice -n15 ionice -c3 \
-  $BINRSYNC $RSYNC_QUIET "$RSHCOMMAND" "$EXCLUDEFILE" $RSYNC_OPTIONS $MODE \
-	$LASTLINKDIR "${LINKDESTS[@]}" "$@" "$TMPDIR/full" \
-	2> >(egrep -v "$VANISHING_PATTERN")
+( $DRY && set -x # echo commands
+  nice -n15 ionice -c3 \
+    $BINRSYNC $RSYNC_QUIET "$RSHCOMMAND" "$EXCLUDEFILE" $RSYNC_OPTIONS $MODE $LASTLINKDIR "${LINKDESTS[@]}" "$@" "$TARGET_DIR" ) \
+    2> >(egrep -v "$VANISHING_PATTERN")
 RSYNC_CODE="$?"
+
+$DRY && exit 0
 
 # handle rsync error codes
 case "$RSYNC_CODE" in
