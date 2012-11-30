@@ -114,7 +114,7 @@ done
 # setup definitions
 CURRENT="$FPREFIX""current"
 unset COMPRESS	# only set on remote invocation
-RSHCOMMAND="--rsh=ssh -oBatchMode=yes -oStrictHostKeyChecking=no -oCompression=yes"
+RSHCOMMAND="--rsh=ssh -x -oBatchMode=yes -oStrictHostKeyChecking=no -oCompression=yes"
 [ -n "$SSHPORT" ] && RSHCOMMAND="$RSHCOMMAND -p $SSHPORT"
 [ -n "$SSHACCOUNT$SSHKEYFILE" ] && {
   [ -n "$SSHACCOUNT" ] && RSHCOMMAND="$RSHCOMMAND -l $SSHACCOUNT"
