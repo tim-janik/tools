@@ -48,7 +48,7 @@ function usagedie { # exitcode message...
   echo "  -q, --quiet	suppress progress information"
   echo "  -c		perform checksum based file content comparisons"
   echo "  --one-file-system"
-  echo "  -x            don’t cross filesystem boundaries"
+  echo "  -x            disable crossing of filesystem boundaries"
   echo "  --version     script and rsync versions"
   echo "DESCRIPTION:"
   echo "  This script creates full or reverse incremental backups using the"
@@ -69,6 +69,7 @@ function usagedie { # exitcode message...
   echo "  while the previous full backup is degraded to a reverse incremental"
   echo "  backup, which only contains differences between the current and the"
   echo "  last backup."
+  echo " RSYNC_BINARY Environment variable used to override the rsync binary path."
   exit "$e"
 }
 
