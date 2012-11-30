@@ -41,7 +41,7 @@ function usagedie { # exitcode message...
   echo "  -C <dir>	backup directory (default: '.')"
   echo "  -E <exclfile>	file with rsync exclude list"
   echo "  -l <account>	ssh user name to use (see ssh(1) -l)"
-  echo "  -s <identity>	ssh identity key file to use (see ssh(1) -i)"
+  echo "  -i <identity>	ssh identity key file to use (see ssh(1) -i)"
   echo "  -P <sshport>	ssh port to use on the remote system"
   echo "  -L <linkdest>	hardlink dest files from <linkdest>/"
   echo "  -o <prefix>	output directory name (default: 'bak')"
@@ -79,7 +79,7 @@ while test $# -ne 0 -a $parse_options = 1; do
     -E)			EXCLUDEFILE="$2" ; shift ;;
     -o)			IPREFIX="$2"- ; FPREFIX="$2"- ; shift ;;
     -l)			SSHACCOUNT="$2" ; shift ;;
-    -s)			SSHKEYFILE="$2" ; shift ;;
+    -i)			SSHKEYFILE="$2" ; shift ;;
     -P)			SSHPORT="$2" ; shift ;;
     -L)			LINKDESTS[$[${#LINKDESTS[@]}+1]]="$2" ; shift ;;
     --version)		echo "sayebackup.sh version 0"; $BINRSYNC --version | head -n1 ; exit 0 ;;
