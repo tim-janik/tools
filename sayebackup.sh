@@ -35,7 +35,7 @@ function usagedie { # exitcode message...
   [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2
   echo "Usage: $SCRIPTNAME [options] sources..."
   echo "OPTIONS:"
-  echo "  -i		make reverse incremental backup"
+  echo "  --inc		make reverse incremental backup"
   echo "  --dry		run and show rsync with --dry-run option"
   echo "  --help	print usage summary"
   echo "  -C <dir>	backup directory (default: '.')"
@@ -70,7 +70,7 @@ parse_options=1
 while test $# -ne 0 -a $parse_options = 1; do
   case "$1" in
     --dry-run|--dry)  	DRY=true ;;   # simulation
-    -i)			INC=true ;;
+    --inc)		INC=true ;;
     -c)			RSYNC_OPTIONS="$RSYNC_OPTIONS -c" ;;
     -x|--one-file-system) RSYNC_OPTIONS="$RSYNC_OPTIONS -x" ;;
     -q|--quiet)		RSYNC_QUIET=-q ;;
