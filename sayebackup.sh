@@ -110,6 +110,7 @@ RSHCOMMAND="--rsh=ssh -oBatchMode=yes -oStrictHostKeyChecking=no -oCompression=y
 [ -n "$SSHPORT" ] && RSHCOMMAND="$RSHCOMMAND -p $SSHPORT"
 [ -n "$SSHACCOUNT$SSHKEYFILE" ] && {
   [ -n "$SSHACCOUNT" ] && RSHCOMMAND="$RSHCOMMAND -l $SSHACCOUNT"
+  [ "${SSHKEYFILE:0:1}" != "/" ] && SSHKEYFILE="$STARTPWD/$SSHKEYFILE"
   [ -n "$SSHKEYFILE" ] && RSHCOMMAND="$RSHCOMMAND -i $SSHKEYFILE -o IdentitiesOnly=yes"
   COMPRESS="--compress-level=7"
 }
