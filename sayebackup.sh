@@ -1,4 +1,5 @@
 #!/bin/bash
+# Licensed GNU GPLv3 or later: http://www.gnu.org/licenses/lgpl.html
 
 # die with descriptive error messages
 SCRIPTNAME=`basename $0` ; STARTPWD=`pwd`
@@ -91,7 +92,7 @@ while test $# -ne 0 -a $parse_options = 1; do
     -i)			SSHKEYFILE="$2" ; shift ;;
     -P)			SSHPORT="$2" ; shift ;;
     -L)			LINKDESTS[$[${#LINKDESTS[@]}+1]]="$2" ; shift ;;
-    --version)		echo "sayebackup.sh version 0"; $BINRSYNC --version | head -n1 ; exit 0 ;;
+    --version)		echo "sayebackup.sh version 0.0.1"; $BINRSYNC --version | head -n1 ; exit 0 ;;
     --)  		parse_options=0 ;;
     -*)		     	usagedie 1 "option not supported: $1" ;;
     *)		     	parse_options=0 ; break ;;
