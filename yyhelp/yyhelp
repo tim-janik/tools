@@ -40,9 +40,12 @@ function exit_err() {
 	exit $ecode
 }
 function less_if_not_empty() {
-	if read first_line; then
-	  ( echo $first_line ; cat ) | less -R "$@"
+	if IFS= read first_line; then
+	  { echo "$first_line" ; cat ; } | less -R "$@"
         fi
+}
+function less_if_paging() {
+  less -F -R "$@"
 }
 
 # configure for terminals with ANSI color escapes
@@ -52,7 +55,7 @@ test -t 1 -a -t 0 && match $'*\e[31m*' "`tput setaf 1 2>/dev/null`" && {
         INTERACTIVE=true
 	SETBOLD=echo\ -ne\ '\e[1m' ; SETNORM=echo\ -ne\ '\e[0m'
 	BOLD=$'\e[1m'; GREEN=$'\e[32m'; TURK=$'\e[36m'; NORM=$'\e[0m';
-	COLOR=--color ; OUT=less_if_not_empty
+	COLOR=--color ; OUT=less_if_not_empty # less_if_paging
 	#' # work around syntax highlighting in old joe(1) versions wrg $''
 	# we hardcode ANSI escapes directly because less -R can only deal with \e[*m
 }
@@ -92,6 +95,11 @@ function list_committable() { # [FILES...]
 	esac
 	echo "$mode  ${file#$stripprefix}"
     done
+}
+function has_diff {
+  git diff-index --quiet --cached HEAD --ignore-submodules -- || return 0
+  git diff-files --quiet --ignore-submodules || return 0
+  return 1
 }
 
 # GIT commands
@@ -206,16 +214,16 @@ _EOF_HERE
 		# handle auto pushing
 		test 0 = $ccode -a "true" = "`git config --bool yyhelp.auto-push-commits`" && yypushpull
 		exit $ccode ;;
-*/yydiff)	args=`getopt -n "$0" -o r: -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
-		rev=HEAD
+*/yydiff)	args=`getopt -n "$0" -o r: -l stat -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
+		rev=HEAD ; STAT=
 		while :; do case "$1" in
 		-r) rev="$2"; shift 2; git rev-parse --verify "$rev" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $rev" ;;
+		--stat) STAT=--stat; shift ;;
 		--) shift; break ;;
 		esac; done
 		git update-index --refresh > /dev/null
-		# 'git-diff-index -m' shows uncommittable files
 		CWD=; test -z "$*" && CWD=. # run diff relative to CWD, just like yycommit commits relative to CWD
-		git diff-index -r -C -p $COLOR "$rev" -- $CWD "$@" | $OUT ;;
+		git diff -C $STAT $COLOR "$rev" -- $CWD "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
 		exec git gc --prune ;;
 */yyHistoryGrep)
@@ -228,13 +236,14 @@ _EOF_HERE
 		git rev-list --all --pretty=format:'/^%t/s/^%T:/%H:/' | grep -v ^commit >$TMAP
 		# grep trees in chronological order and convert hashes on the fly
 		git rev-list --all $REV --pretty=format:%T | grep -v ^commit |
-		  xargs git grep -E -e $1 | sed -f $TMAP | $OUT
+		  xargs git grep $COLOR -E -e $1 | sed -f $TMAP | $OUT
 		;;
 */yyinfo)	test -n "$*" && exec yyhelp
 		REPO="`cd \"$gitdir/..\" && basename \"$(pwd)\" `"
 		REPODIR="`git rev-parse --show-cdup`" ; test -z "$REPODIR" && REPODIR=.
 		OC="`git rev-parse --verify origin 2>/dev/null`"; test -n "$OC" && OC="`date -d \"$(git log -n1 --pretty=format:%cD $OC)\" '+%F %T %z'` # $OC"
 		HC="`git rev-parse --verify HEAD   2>/dev/null`"; test -n "$HC" && HC="`date -d \"$(git log -n1 --pretty=format:%cD $HC)\" '+%F %T %z'` # $HC"
+		HSYM=$(git symbolic-ref HEAD || git rev-parse HEAD) ; HSYM=${HSYM#refs/heads/}
 		test -n "$SVNURL" && SVNREV=`git cat-file commit HEAD | tail -n1 | sed -n '/^git-svn-id:.*/ { s/^[^@]\+@\([0-9]\+\).*/\1/; p; }'`
 		true			&& echo "GIT-Repo: $REPO"
 		true			&& echo "URL:      $GITURL"
@@ -244,6 +253,7 @@ _EOF_HERE
 		test -n "$SVNURL"	&& echo "SVN-URL:  $SVNURL"
 		test -n "$SVNREV"	&& echo "SVN-Rev:  $SVNREV (HEAD)"
 		test -n "$HC"		&& echo "HEAD:     $HC"
+		test -n "$HSYM"		&& echo "BRANCH:   $HSYM"
 		test -n "$OC"		&& echo "Origin:   $OC"
 		;;
 */yylsbranches)	test -n "$*" && exec yyhelp
@@ -251,6 +261,11 @@ _EOF_HERE
 */yylstags)	test -n "$*" && exec yyhelp
 		# FIXME: this depends on post git-1.5.3.4
 		git tag -n1 -l '*' ;;
+*/yymerge)	test "$#" -eq 1 || exec yyhelp
+    		BRANCH="$1"
+		git rev-parse -q --verify "$BRANCH" || exit_err 3 "$0: unknown revision: $rev"
+    		git merge --log=2147483647 --no-ff -e -m "Merge branch '$BRANCH'" $BRANCH
+		;;
 */yypull)	test -n "$*" && exec yyhelp
 		$gitsvn && require_master "`basename $0`: refusing to pull with git-svn onto branch other than master"
 		$gitsvn && exec git svn rebase || exec git pull ;;
@@ -258,17 +273,39 @@ _EOF_HERE
 		$gitsvn && require_master "`basename $0`: refusing to push with git-svn from branch other than master"
 		$gitsvn && exec git svn dcommit
 		git push && git pull || exit $? ;;
-#*/yyrebase)	test "$#" = 2 || exec yyhelp
-#    		BRANCH="$1"; DEST="$2"
-#		MERGEBASE=`git-merge-base "$BRANCH" "$DEST"` || exit_err 1 "`basename $0`: missing common base for: $BRANCH $DEST"
-#		echo -n "Planned: checkout $BRANCH, rebase ont $DEST, proceed? (y/N) "
-#		read answ ; test "$answ" != "y" && exit 1
-#		exec git rebase -i --onto "$DEST" "$MERGEBASE" "$BRANCH"
+*/yyrebase)	test "$#" -ge 1 -a "$#" -le 2 || exec yyhelp
+    		BRANCH="$1"; DEST="$2"; test "$#" = 2 || DEST="HEAD"
+		MERGEBASE=`git merge-base "$BRANCH" "$DEST"` || exit_err 1 "`basename $0`: missing common base for: $BRANCH $DEST"
+		echo -n "Planned: checkout $BRANCH, rebase $MERGEBASE..$BRANCH onto $DEST, proceed? (y/N) "
+		read answ ; test "$answ" != "y" && exit 1
+		#exec git rebase -p --onto "$DEST" "$MERGEBASE" "$BRANCH"
+		exec  git rebase -i --onto "$DEST" "$MERGEBASE" "$BRANCH" ;;
 */yyremove)	exec git update-index --force-remove -- "$@" ;;
 */yyreset)	test -n "$*" && exec yyhelp
 		exec git checkout -f HEAD ;;
 */yyrestore)	git ls-tree --full-name -r HEAD -- "$@" | git update-index --index-info # resurrect deleted
-		exec git checkout-index -f -u -- "$@" ;;
+		exec git checkout-index -f -u -- "$@" ;; # FIXME: does not 'restore' newly added files
+*/yystash)	test "$#" = 1 || exec yyhelp
+    		NAME="$1"
+		HSYM=$(git symbolic-ref HEAD || git rev-parse HEAD) ; HSYM=${HSYM#refs/heads/}
+		HLINE=$(git rev-list --oneline -n 1 HEAD --)
+		git update-index -q --refresh # update unmerged and needs-updating state
+		DIFFSTAT=$(git diff --stat --ignore-submodules HEAD --)
+		test -z "$DIFFSTAT" && exit 0 # nothing to stash
+		git show-ref -q --heads "stash-$NAME" && exit_err 3 "`basename $0`: Branch already exists: stash-$NAME"
+		trap "rm -f $TFILES" 0 HUP INT QUIT TRAP USR1 PIPE TERM
+		TFILES=`mktemp -t yystash$$XXXXXX.tmp` && touch $TFILES || exit_err 9 "$0: failed to create temporary file"
+		trap "rm -f $TFILES" 0 HUP INT QUIT TRAP USR1 PIPE TERM
+		# check working tree changes into index
+		TREE_HASH=$(git diff --name-only -z HEAD -- > "$TFILES" \
+		  && git update-index -z --add --remove --stdin < "$TFILES" \
+		  && git write-tree) || exit_err 1 "`basename $0`: failed to create tree object from index"
+		COMMIT_HASH=$({ printf 'STASH: %s\n\n' "$NAME" ; printf 'WIP on %s: %s\n%s' "$HSYM" "$HLINE" "$DIFFSTAT" ; } \
+		  | git commit-tree $TREE_HASH -p HEAD) || exit_err 1 "`basename $0`: failed to commit tree $tree_hash"
+		git branch "stash-$NAME" $COMMIT_HASH || exit $?
+		git rev-list --pretty=oneline -n 1 "stash-$NAME" --
+		git checkout -f HEAD
+		exit 0 ;;
 */yystatus)	test -z "$*" || match '-[tuc]' "$*" || exec yyhelp
 		git update-index --refresh > /dev/null	# update stat info
 		! match '*-[tc]*' "$*" &&	# list unknown files
@@ -302,8 +339,8 @@ esac
 test "$YYHELP" || exit 0 # successful command execution
 
 YYHELP_ALIASES="yyadd yyblame yybranch yybranchdel yyChangeLog yycommit yydiff yygc yyHistoryGrep
-                yyinfo yylsbranches yylstags yypull yypushpull yyremove yyreset yyrestore
-                yystatus yytag yytagdel yyuncommit yyview yywarp"
+                yyinfo yylsbranches yylstags yymerge yypull yypushpull yyremove yyrebase yyreset yyrestore
+                yystash yystatus yytag yytagdel yyuncommit yyview yywarp"
 
 test "x$1" = "x--install-aliases" && {
 	git --version | egrep '^git version (1\.[5-9]\.|[2-9]\.)' -q ||
@@ -347,6 +384,7 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyycommit       [FILES...] - commit current working tree'
 	echo -e '\tyydiff [-rREV] [FILES...] - show committable differences in'
 	echo -e '\t                            working tree; given revision REV'
+	echo -e '\tyydiff --stat [...]       - produce output like diffstat'
 	echo -e '\tyygc                      - repack and prune repository'
 	echo -e '\tyyhelp                    - display yy* help information'
 	echo -e '\tyyHistoryGrep  [-r] <PAT> - grep commit history for POSIX extended'
@@ -355,12 +393,15 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyyinfo                    - display repository information'
 	echo -e '\tyylsbranches              - list branches'
 	echo -e '\tyylstags                  - list tags'
+	echo -e '\tyymerge BRANCH            - merge BRANCH into current branch'
 	echo -e '\tyypull                    - pull upstream sources'
 	echo -e '\tyypushpull                - push & pull upstream sources'
 	echo -e '\tyyrebase BRANCH NEWBASE   - rebase BRANCH onto NEWBASE'
 	echo -e '\tyyremove       [FILES...] - remove files from git repository'
+	echo -e '\tyyrebase BRANCH [HEAD]    - checkout BRANCH, and rebase onto HEAD'
 	echo -e '\tyyreset                   - reset (revert to HEAD) all files in the tree'
 	echo -e '\tyyrestore      [FILES...] - forcefully recheckout specific files'
+	echo -e '\tyystash BRANCHNAME        - stash tree modifications into branch'
 	echo -e '\tyystatus       [-t|-u|-c] - display working tree status'
 	echo -e '\t                            -t: trim unknown; -u: show unknown;'
 	echo -e '\t                            -c: trim and use commit message style'
@@ -393,7 +434,7 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e 'INSTALLATION'
 	$SETNORM
 	echo -e '\tTo install YummyYummySourceControl, copy yyhelp into a bin/ directory'
-	echo -e '\tfrom $PATH and invoke: ./yyhelp --install-aliases'
+	echo -e '\tfrom $PATH and in that directory invoke: ./yyhelp --install-aliases'
 	echo
 	$SETBOLD
 	echo -e 'HISTORY'
