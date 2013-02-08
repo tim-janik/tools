@@ -28,7 +28,7 @@ function usagedie { # exitcode message...
   [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2
   echo "Usage: $SCRIPTNAME [options] sources..."
   echo "OPTIONS:"
-  echo "  -i            purge/reduce incremental backups"
+  echo "  --inc         purge/reduce incremental backups"
   echo "  -g <nignores> recent files to ignore (8)"
   echo "  -k <nkeeps>   non-recent to keep (8)"
   echo "  -d <maxdelet> maximum number of deletions"
@@ -58,7 +58,7 @@ function usagedie { # exitcode message...
 parse_options=1
 while test $# -ne 0 -a $parse_options = 1; do
   case "$1" in
-    -i)                 INC=true ;;
+    --inc)              INC=true ;;
     -L)                 LISTDELTAS=true ; NIGNORES=1 ; NKEEPS=1 ;;
     -q|--quiet)         INFOMSG=false ;;
     --help)             usagedie 0 ;;
