@@ -4,7 +4,7 @@
 CWD=
 SOURCES=
 INC=false
-NIGNORES=8
+NGUARDED=8
 NKEEPS=8
 FPREFIX=bak-
 FPOSTFIX=-snap
@@ -28,8 +28,8 @@ function usagedie { # exitcode message...
   [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2
   echo "Usage: $SCRIPTNAME [options] sources..."
   echo "OPTIONS:"
-  echo "  --inc         purge/reduce incremental backups"
-  echo "  -g <nignores> recent files to ignore (8)"
+  echo "  --inc         merge incremental backups"
+  echo "  -g <nguarded> recent files to guard (8)"
   echo "  -k <nkeeps>   non-recent to keep (8)"
   echo "  -d <maxdelet> maximum number of deletions"
   echo "  -C <dir>      backup directory"
@@ -38,18 +38,20 @@ function usagedie { # exitcode message...
   echo "  --fake        only simulate deletions or merges"
   echo "  -L            list all backup files with delta times"
   echo "DESCRIPTION:"
-  echo "  Purge backups older than <nignores>, so that only <nkeeps> backups"
-  echo "  remain. In other words, the number of backups is reduced to <nignores>"
-  echo "  + <nkeeps>, where <nignores> are the most recent backups."
-  echo "  The puring logic will always pick the backup with the shortest"
-  echo "  time distance to other backups. Thus, the number of <nkeeps> remaining"
+  echo "  Delete candidates from a set of aging backups to spread backups most evenly"
+  echo "  over time, based on time stamps embedded in directory names."
+  echo "  Backups older than <nguarded> are purged, so that only <nkeeps> backups"
+  echo "  remain. In other words, the number of backups is reduced to <nguarded>"
+  echo "  + <nkeeps>, where <nguarded> are the most recent backups."
+  echo "  The puring logic will always pick the backup with the shortest time"
+  echo "  distance to other backups. Thus, the number of <nkeeps> remaining"
   echo "  backups is most evenly distributed across the total time period within"
   echo "  which backups have been created."
   echo "  Purging of incremental backups happens via merging of newly created"
   echo "  files into the backups predecessor. Thus merged incrementals may"
   echo "  contain newly created files from after the incremental backups creation"
   echo "  time, but the function of reverse incremental backups is fully"
-  echo "  preserved. Merged incrementals use a different file name ending."
+  echo "  preserved. Merged incrementals use a different file name ending (-xinc)."
   exit "$e"
 }
 
@@ -59,13 +61,13 @@ parse_options=1
 while test $# -ne 0 -a $parse_options = 1; do
   case "$1" in
     --inc)              INC=true ;;
-    -L)                 LISTDELTAS=true ; NIGNORES=1 ; NKEEPS=1 ;;
+    -L)                 LISTDELTAS=true ; NGUARDED=1 ; NKEEPS=1 ;;
     -q|--quiet)         INFOMSG=false ;;
     --help)             usagedie 0 ;;
     -C)                 CWD="$2" ; shift ;;
     -o)                 IPREFIX="$2"- ; FPREFIX="$2"- ; shift ;;
     -d)                 MAXDELETE="$2" ; shift ;;
-    -g)                 NIGNORES="$2" ; shift ;;
+    -g)                 NGUARDED="$2" ; shift ;;
     -k)                 NKEEPS="$2" ; shift ;;
     --fake)             FAKERUN=true ;;
     --)                 parse_options=0 ;;
@@ -135,7 +137,7 @@ find . -maxdepth 1 -name "$PREFIX*$POSTFIX" -o -name "$PREFIX*$POSTFIX2" | sort 
 sed "s/\.\/$PREFIX\([0-9]\+-[0-9]\+-[0-9]\+\)-\([0-9]\+:[0-9]\+:[0-9]\+\).*/\1 \2/" < "$TMPFILEL" > "$TMPFILES"
 
 # parse names and stamps [0..nfiles]
-nfiles=$[1 - $NIGNORES]
+nfiles=$[1 - $NGUARDED]
 unset filelist stamplist
 while read file && read stamp <&3 ; do
   [ $nfiles -le 0 ] && msg "Ignore: $file"
