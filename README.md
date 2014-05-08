@@ -6,4 +6,4 @@ Snipbits
 This repository contains bits of code and snippets related to [timj.testbit.eu](http://timj.testbit.eu/).
 
 Noteworthy contents:
-* backups/: a backup and purging solution for automated backup creation and purging.
+* backups/: an rsync(1) based solution for automated backup creation, deduplication and purging.
