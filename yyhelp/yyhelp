@@ -22,6 +22,7 @@
 VERSION=YummyYummySourceControl-0.9
 
 # setup
+SCRIPTNAME="`basename \"$0\"`"
 SETBOLD=true ; SETNORM=true ; COLOR= ; OUT=cat ; YYHELP=
 
 # perform wildcard string matches
@@ -45,7 +46,7 @@ function less_if_not_empty() {
         fi
 }
 function less_if_paging() {
-  less -F -R "$@"
+  less -FX -R "$@"
 }
 
 # configure for terminals with ANSI color escapes
@@ -101,6 +102,10 @@ function has_diff {
   git diff-files --quiet --ignore-submodules || return 0
   return 1
 }
+function echo_signoff {
+  echo # separating newline before signoff section
+  git var GIT_COMMITTER_IDENT | sed -e 's/>.*/>/ ; s/^/Signed-off-by: /'
+}
 
 # GIT commands
 case "/$0" in
@@ -141,8 +146,9 @@ case "/$0" in
 		  sed -e 's/^/	/;s/^	//;/^[ 	]*<unknown>$/d' \
                       -e 's/^[	 ]*$//'                                 |
 		  $OUT ;;
-*/yycommit)     # standard boilerplate
-	        USAGE='[FILES...]' ; SUBDIRECTORY_OK=Yes ; . "$(git --exec-path)/git-sh-setup" ; require_work_tree
+*/yycommit)     # Usage: yycommit [-<N>] [FILES...]
+  		match '-[0-9]' "$1" && { N=${1:1}; shift; } || N=0
+  		SUBDIRECTORY_OK=Yes ; . "$(git --exec-path)/git-sh-setup" ; require_work_tree
 		verify_msg=true
 		# check and set AUTHOR and COMMITTER
 		git var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || exit_err 9 "$0: missing commit author information"
@@ -153,8 +159,13 @@ case "/$0" in
 		CIDENT=$(git var GIT_COMMITTER_IDENT | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
 		  read author; read time; echo -n "  $author" ; echo $time | gawk '{ print strftime (" %F %T %z", $1) }'
 		})
+		# update stat info for list_committable
+		git update-index --refresh --verbose
 		# construct commit message
-		echo > "$GIT_DIR/commit-editmsg.txt" || exit $? # abort if not writable
+		touch "$GIT_DIR/commit-editmsg.txt" || exit $? # abort if not writable
+		git log --oneline HEAD ^HEAD~$N | sed 's/^[^ ]*/#YY:/' > "$GIT_DIR/commit-editmsg.txt"
+		test $N -gt 0 || echo >> "$GIT_DIR/commit-editmsg.txt"
+		echo_signoff >> "$GIT_DIR/commit-editmsg.txt"
 		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
 		#YY: ----------------------------------------------------------------------
 		#YY: Files to be committed (detected by "#YY:F"):
@@ -179,7 +190,7 @@ _EOF_HERE
 		${VISUAL:-${EDITOR:-vi}} "$GIT_DIR/commit-editmsg.txt" ||
 		  exit_err 3 "** Aborting commit, editing commit message failed: $GIT_DIR/commit-editmsg.txt"
 		# verify user's commit message
-		grep -v -i '^\(Signed-off-by\|#YY\):' < "$GIT_DIR/commit-editmsg.txt" > "$GIT_DIR/commit-msg.txt" || exit $?
+		grep -v -i '^#YY:' < "$GIT_DIR/commit-editmsg.txt" > "$GIT_DIR/commit-msg.txt" || exit $?
 		$verify_msg && test -x "$GIT_DIR/hooks/commit-msg" && { "$GIT_DIR/hooks/commit-msg" "$GIT_DIR/commit-msg.txt" || exit $? ; }
 		mlines=`git stripspace < "$GIT_DIR/commit-msg.txt" | wc -l`
 		test 0 -lt "$mlines" || exit_err 3 "** Aborting commit, missing commit message..."
@@ -211,19 +222,21 @@ _EOF_HERE
 		mv -f "$TMPINDEX" "$GIT_DIR/index"
 		trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM
 		git update-index --refresh --again > /dev/null  # update stat info
+		sync &
 		# handle auto pushing
 		test 0 = $ccode -a "true" = "`git config --bool yyhelp.auto-push-commits`" && yypushpull
 		exit $ccode ;;
-*/yydiff)	args=`getopt -n "$0" -o r: -l stat -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
-		rev=HEAD ; STAT=
+*/yydiff)	args=`getopt -n "$0" -o br: -l stat -- "$@"`; [ $? = 0 ] || exec yyhelp; eval set -- "$args"
+		rev=HEAD ; STAT= ; DIFFB=
 		while :; do case "$1" in
+		-b) DIFFB=-b; shift ;;
 		-r) rev="$2"; shift 2; git rev-parse --verify "$rev" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $rev" ;;
 		--stat) STAT=--stat; shift ;;
 		--) shift; break ;;
 		esac; done
 		git update-index --refresh > /dev/null
 		CWD=; test -z "$*" && CWD=. # run diff relative to CWD, just like yycommit commits relative to CWD
-		git diff -C $STAT $COLOR "$rev" -- $CWD "$@" | $OUT ;;
+		COLUMNS=999999 git diff --diff-algorithm=histogram $DIFFB -C $STAT $COLOR "$rev" -- $CWD "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
 		exec git gc --prune ;;
 */yyHistoryGrep)
@@ -239,15 +252,16 @@ _EOF_HERE
 		  xargs git grep $COLOR -E -e $1 | sed -f $TMAP | $OUT
 		;;
 */yyinfo)	test -n "$*" && exec yyhelp
-		REPO="`cd \"$gitdir/..\" && basename \"$(pwd)\" `"
+		REPO="`basename \"$(git rev-parse --show-toplevel)\" `"
 		REPODIR="`git rev-parse --show-cdup`" ; test -z "$REPODIR" && REPODIR=.
+		test -z "$REPODIR" && CURRENT=. || CURRENT=`realpath --relative-to="$REPODIR" ./`
 		OC="`git rev-parse --verify origin 2>/dev/null`"; test -n "$OC" && OC="`date -d \"$(git log -n1 --pretty=format:%cD $OC)\" '+%F %T %z'` # $OC"
 		HC="`git rev-parse --verify HEAD   2>/dev/null`"; test -n "$HC" && HC="`date -d \"$(git log -n1 --pretty=format:%cD $HC)\" '+%F %T %z'` # $HC"
 		HSYM=$(git symbolic-ref HEAD || git rev-parse HEAD) ; HSYM=${HSYM#refs/heads/}
 		test -n "$SVNURL" && SVNREV=`git cat-file commit HEAD | tail -n1 | sed -n '/^git-svn-id:.*/ { s/^[^@]\+@\([0-9]\+\).*/\1/; p; }'`
 		true			&& echo "GIT-Repo: $REPO"
 		true			&& echo "URL:      $GITURL"
-		true			&& echo "Path:     $REPODIR"
+		true			&& echo "Path:     $CURRENT"
 		$gitsvn                 && echo "Method:   git-svn commands are used for push and pull"
 		$gitsvn			|| echo "Method:   git-push and git-pull are used for updates"
 		test -n "$SVNURL"	&& echo "SVN-URL:  $SVNURL"
@@ -257,14 +271,29 @@ _EOF_HERE
 		test -n "$OC"		&& echo "Origin:   $OC"
 		;;
 */yylsbranches)	test -n "$*" && exec yyhelp
-		exec git branch $COLOR -a ;;
+		exec git branch $COLOR -a -vv ;;
 */yylstags)	test -n "$*" && exec yyhelp
 		# FIXME: this depends on post git-1.5.3.4
 		git tag -n1 -l '*' ;;
 */yymerge)	test "$#" -eq 1 || exec yyhelp
     		BRANCH="$1"
-		git rev-parse -q --verify "$BRANCH" || exit_err 3 "$0: unknown revision: $rev"
-    		git merge --log=2147483647 --no-ff -e -m "Merge branch '$BRANCH'" $BRANCH
+		git rev-parse -q --verify "$BRANCH^0" || exit_err 3 "$SCRIPTNAME: unknown revision: $rev"
+		test -e "$gitdir/MERGE_MSG" && exit_err 3 "$SCRIPTNAME: $gitdir/MERGE_MSG: another merge already in progress?"
+		SEP="^^^^^^^^^^^^^^^^^^^^^^^^^^"
+		echo -e "$SEP MERGE-DRAFT $SEP # DELETE THIS" > "$gitdir/MERGE_MSG"
+		echo -e "Merge branch '$BRANCH'\n\n* $BRANCH:" >> "$gitdir/MERGE_MSG"
+		git log --pretty=$'\f%s%+b' "HEAD..$BRANCH" |
+		    sed '/^\(Signed-off-by\|Acked-by\|Tested-by\|Cc\):/d' |
+		    sed '/^$/d ; s/^/\t/ ; s/^\t\f/  /' >> "$gitdir/MERGE_MSG"
+		echo_signoff >> "$gitdir/MERGE_MSG"
+		HO=`md5sum "$gitdir/MERGE_MSG"`
+		$EDITOR "$gitdir/MERGE_MSG"
+		grep -q "^\^\+.*\bMERGE-DRAFT\b" "$gitdir/MERGE_MSG" && {
+		  HN=`md5sum "$gitdir/MERGE_MSG"`
+		  test "$HO" != "$HN" || rm -f $gitdir/MERGE_MSG
+		  exit_err 1 "$SCRIPTNAME: aborting draft merge..."
+		}
+    		git merge --no-edit --no-ff -m "`cat $gitdir/MERGE_MSG`" $BRANCH && rm -f $gitdir/MERGE_MSG
 		;;
 */yypull)	test -n "$*" && exec yyhelp
 		$gitsvn && require_master "`basename $0`: refusing to pull with git-svn onto branch other than master"
@@ -308,8 +337,9 @@ _EOF_HERE
 		exit 0 ;;
 */yystatus)	test -z "$*" || match '-[tuc]' "$*" || exec yyhelp
 		git update-index --refresh > /dev/null	# update stat info
+		test -e $gitdir/info/exclude && EXCLUDE_FROM=--exclude-from=$gitdir/info/exclude || EXCLUDE_FROM=
 		! match '*-[tc]*' "$*" &&	# list unknown files
-		  git ls-files --others --directory --exclude-from=$gitdir/info/exclude --exclude-per-directory=.gitignore |
+		  git ls-files --others --directory $EXCLUDE_FROM --exclude-per-directory=.gitignore |
 		    { test " $*" != " -u" && sed 's,^,?  ,' || sed 's,/$,,' ; }
 		test " $*" != " -u" && {	# list non-unknown files
 		  if test -z "$githead" ; then	# empty history, list new files
@@ -325,7 +355,7 @@ _EOF_HERE
 		match "* -*" " $*" && exec yyhelp
 		exec git tag -d "$1" ;;
 */yyuncommit)	test -n "$*" && exec yyhelp
-		exec git reset --soft HEAD~1 ;;
+		exec git reset --mixed -N HEAD~1 ;;
 */yyview)	test -n "$*" && exec yyhelp
     		if which gitg 2>/dev/null 1>&2 && false
 		then exec gitg --all &
@@ -381,7 +411,7 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyybranchdel [-f] <branch> - delete branch (forcable)'
 	echo -e '\tyyChangeLog [-s]          - show git log in ChangeLog style'
 	echo -e '\t                            -s: skip committed SVN revisions'
-	echo -e '\tyycommit       [FILES...] - commit current working tree'
+	echo -e '\tyycommit [-<N>] [FILE...] - commit current working tree'
 	echo -e '\tyydiff [-rREV] [FILES...] - show committable differences in'
 	echo -e '\t                            working tree; given revision REV'
 	echo -e '\tyydiff --stat [...]       - produce output like diffstat'
