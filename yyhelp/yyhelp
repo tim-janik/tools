@@ -187,7 +187,8 @@ _EOF_HERE
 _EOF_HERE
 		# edit commit message
 		grep -q '^#YY:F ' "$GIT_DIR/commit-editmsg.txt" || exit_err 0 "** Nothing to commit."
-		${VISUAL:-${EDITOR:-vi}} "$GIT_DIR/commit-editmsg.txt" ||
+		ED=`git config --get core.editor`
+		${ED:-joe} "$GIT_DIR/commit-editmsg.txt" ||
 		  exit_err 3 "** Aborting commit, editing commit message failed: $GIT_DIR/commit-editmsg.txt"
 		# verify user's commit message
 		grep -v -i '^#YY:' < "$GIT_DIR/commit-editmsg.txt" > "$GIT_DIR/commit-msg.txt" || exit $?
