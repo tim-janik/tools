@@ -6,7 +6,7 @@ from xml import etree
 from xml.etree import ElementTree
 
 pkginstall_configvars = {
-  'PACKAGE' : 'dummy', 'PACKAGE_NAME' : 'dummy', 'VERSION' : '0.0', 'REVISION' : 'uninstalled',
+  'VERSION' : '0.0',
   #@PKGINSTALL_CONFIGVARS_IN24LINES@ # configvars are substituted upon script installation
 }
 
@@ -275,8 +275,7 @@ def help_page (topic):
   except:
     die ('Failed to execute help browser for:', topic)
 def print_version():
-  print "wikihtml2man %s (%s, %s)" % (pkginstall_configvars['VERSION'],
-                                      pkginstall_configvars['PACKAGE_NAME'], pkginstall_configvars['REVISION'])
+  print "wikihtml2man %s" % pkginstall_configvars['VERSION']
   print "Redistributable under GNU GPLv3 or later: http://gnu.org/licenses/gpl.html"
   sys.exit (0)
 
