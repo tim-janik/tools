@@ -17,7 +17,7 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 import sys, os, re, urllib, csv
 pkginstall_configvars = {
-  'PACKAGE' : 'dummy', 'PACKAGE_NAME' : 'dummy', 'VERSION' : '0.0', 'REVISION' : 'uninstalled',
+  'VERSION' : '0.0'
   #@PKGINSTALL_CONFIGVARS_IN24LINES@ # configvars are substituted upon script installation
 }
 
@@ -142,8 +142,7 @@ def read_handle_bugs (config, url):
           print "% 7u (NOBUG)" % iid
 
 def help (version = False, verbose = False):
-  print "buglist %s (%s, %s)" % (pkginstall_configvars['VERSION'],
-                                 pkginstall_configvars['PACKAGE_NAME'], pkginstall_configvars['REVISION'])
+  print "buglist %s" % pkginstall_configvars['VERSION']
   print "Redistributable under GNU GPLv3 or later: http://gnu.org/licenses/gpl.html"
   if version: # version *only*
     return

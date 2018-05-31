@@ -3,7 +3,7 @@
 #
 ## This work is provided "as is"; see: http://rapicorn.org/LICENSE-AS-IS
 
-MYPACKAGE=dummy; MYVERSION=0.0; MYREVISION=uninstalled;
+MYVERSION=0.0
 #@PKGINSTALL_CONFIGVARS_IN24LINES@ # configvars are substituted upon script installation
 
 # 20110930: renamed script to buildfay
@@ -84,7 +84,7 @@ while test $# -ne 0 -a $parse_options = 1; do
     -V)		VERSION="$2" ; shift ;;
     -X)		CONTREXIT=1 ;;
     -v|--version)
-      		echo "buildfay $MYVERSION ($MYPACKAGE, $MYREVISION)" ;
+      		echo "buildfay $MYVERSION" ;
       		echo "Redistributable under GNU GPLv3 or later: http://gnu.org/licenses/gpl.html" ;
 		exit 0 ;;
     --)		parse_options=0 ;;
