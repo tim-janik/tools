@@ -1,0 +1,85 @@
+<div id="toc" class="toc"><div id="toctitle"><h2>Contents</h2></div>
+<ul>
+<li class="toclevel-1 tocsection-1"><a href="#WIKIHTML2MAN.281.29_-_Wiki_HTML_to_Manual_Page_Converter"><span class="tocnumber">1</span> <span class="toctext">WIKIHTML2MAN(1) - Wiki HTML to Manual Page Converter</span></a>
+<ul>
+<li class="toclevel-2 tocsection-2"><a href="#NAME"><span class="tocnumber">1.1</span> <span class="toctext">NAME</span></a></li>
+<li class="toclevel-2 tocsection-3"><a href="#SYNOPSIS"><span class="tocnumber">1.2</span> <span class="toctext">SYNOPSIS</span></a></li>
+<li class="toclevel-2 tocsection-4"><a href="#DESCRIPTION"><span class="tocnumber">1.3</span> <span class="toctext">DESCRIPTION</span></a></li>
+<li class="toclevel-2 tocsection-5"><a href="#OPTIONS"><span class="tocnumber">1.4</span> <span class="toctext">OPTIONS</span></a></li>
+<li class="toclevel-2 tocsection-6"><a href="#SEE_ALSO"><span class="tocnumber">1.5</span> <span class="toctext">SEE ALSO</span></a></li>
+</ul>
+</li>
+</ul>
+</div>
+
+<h1><span class="mw-headline" id="WIKIHTML2MAN.281.29_-_Wiki_HTML_to_Manual_Page_Converter">WIKIHTML2MAN(1) - Wiki HTML to Manual Page Converter</span></h1>
+<p>Manual: Testbit Wiki Pages <br />
+Resource: Testbit.eu/wiki/Tools (r1125) <br />
+Updated: 2014-10-28 <br />
+</p>
+<h2><span class="mw-headline" id="NAME">NAME</span></h2>
+<p>wikihtml2man - Wiki HTML to Manual Page Converter.
+</p>
+<h2><span class="mw-headline" id="SYNOPSIS">SYNOPSIS</span></h2>
+<p><b>wikihtml2man</b> [<i>OPTIONS</i>] [<i>HTML-INPUT</i>]
+</p>
+<h2><span class="mw-headline" id="DESCRIPTION">DESCRIPTION</span></h2>
+<p><b>Wikihtml2man</b> is a converter that parses HTML files, normally originating from a <a href="http://en.wikipedia.org/wiki/MediaWiki" class="extiw" title="wikipedia:MediaWiki">MediaWiki</a> page, and generates <a href="http://en.wikipedia.org/wiki/Man_page" class="extiw" title="wikipedia:Man page">Unix Manual Page</a> sources based on it (often called <b>html2man</b> converter).
+The <b>wikihtml2man</b> converter is released as free software under the GNU GPLv3.
+The <i>HTML-INPUT</i> argument needs to be either a local file, or a downloadable URL, such as: <a class="external free" href="http://testbit.eu/wiki/Wikihtml2man.1?action=render">http://testbit.eu/wiki/Wikihtml2man.1?action=render</a>
+The resulting manual page source is produced on stdout int UTF-8 encoding.
+</p>
+<h2><span class="mw-headline" id="OPTIONS">OPTIONS</span></h2>
+<p><b>Wikihtml2man</b> follows the usual GNU command line syntax, with long options starting with two dashes ('-').
+</p>
+<dl>
+<dt> <b>-h</b>, <b>--help</b>
+</dt>
+<dd> Shows a brief help message.
+</dd>
+<dt> <b>--version</b>
+</dt>
+<dd> Provide brief version information.
+</dd>
+<dt> <b>-g</b>, <b>--debug</b>
+</dt>
+<dd> Prints out additional debugging information during execution.
+</dd>
+<dt> <b>-t</b> <i>PageTitle</i>
+</dt>
+<dd> Specify the title of the manual page, written in all caps.
+</dd>
+<dt> <b>-s</b> <i>ManualSection</i>
+</dt>
+<dd> Specify the section in which the manual page should be placed, see <b>man-pages(7)</b> on this.
+</dd>
+<dt> <b>-u</b> <i>ManualUpdated</i>
+</dt>
+<dd> Specify the date for when the Manual Page was last updated, dates should be written as YYYY-MM-DD.
+</dd>
+<dt> <b>-r</b> <i>ResourceOrigin</i>
+</dt>
+<dd> Specify the origin for this Manual Page.
+</dd>
+<dt> <b>-m</b> <i>ManualPackage</i>
+</dt>
+<dd> Specify the title of the manual package that this manual page belongs to.
+</dd>
+</dl>
+<h2><span class="mw-headline" id="SEE_ALSO">SEE ALSO</span></h2>
+<p><b>man(7)</b>, <b>man-pages(7)</b>
+</p>
+<!-- 
+NewPP limit report
+CPU time usage: 0.015 seconds
+Real time usage: 0.016 seconds
+Preprocessor visited node count: 42/1000000
+Preprocessor generated node count: 92/1000000
+Post‐expand include size: 20/2097152 bytes
+Template argument size: 0/2097152 bytes
+Highest expansion depth: 3/40
+Expensive parser function count: 0/100
+-->
+
+<!-- Saved in parser cache with key testbitwikidb:pcache:idhash:125-1!*!*!!en!*!* and timestamp 20180531101527
+ -->
