@@ -68,7 +68,7 @@ def gman_heuristics (node):
     if capture:
       capture[0] += node.text if isinstance (node.text, basestring) else ''
     if tag.lower() in headings:
-      if capture and gman_name_node: # previous heading was NAME section
+      if capture and gman_name_node is not None: # previous heading was NAME section
         # match ' EXECUTABLE - DESCRIPTIVE BLURB '
         m = re.match (r'\s*([_a-zA-Z0-9][_a-zA-Z0-9-]+)\s+-\s+([^\s].*?)\s*$', capture[0])
         if m:
@@ -327,7 +327,7 @@ def main (argv = ()):
   if dbg: dbg ("XML-DUMP:\n", etree.ElementTree.tostring (root))
   # run heuristics on XML nodes
   gman_heuristics (root)
-  if not gman_name_node:
+  if gman_name_node is None:
     die ("Failed to detect required manual page section: NAME")
   # generate man roff
   mev = ManEvents()
