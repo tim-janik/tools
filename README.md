@@ -1,9 +1,13 @@
-Snipbits
-========
+Misc
+====
 
-<img src="https://testbit.eu/wiki.mw/extensions/testbit.png" width="125px" align="right">
+<img src="https://testbit.eu/favicon.ico">
 
-This repository contains bits of code and snippets related to [timj.testbit.eu](http://timj.testbit.eu/).
 
-Noteworthy contents:
+This repository contains noteworthy content and tools that have been found
+useful during the development of several [testbit.eu](https://testbit.eu/) projects.
+
 * backups/: an rsync(1) based solution for automated backup creation, deduplication and purging.
+* wikihtml2man/: a Python script to convert Mediawiki pages to manual pages.
+
+License information is given per source file.
