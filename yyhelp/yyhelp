@@ -19,7 +19,17 @@
 #set -e	# exit on errors
 #set -x	# show commands
 
-VERSION=YummyYummySourceControl-0.9
+VERSION=YummyYummySourceControl-0.10
+
+# aliases - usable without git repository
+test "$1" = aliases && {
+  cat <<-__EOF
+	alias yypr='yy pr'
+	alias yy1='yy log1'
+	alias yytodo='yy todo'
+__EOF
+  exit 0
+}
 
 # setup
 SCRIPTNAME="`basename \"$0\"`"
@@ -34,6 +44,15 @@ function match() {
 	esac
 	return 1
 }
+is_cc_file()
+{
+  case "$*" in
+    *.c|*.cc|*.cxx|*.cpp|*.c++|*.C|*.CC|*.Cpp|*.CPP|*.CXX|*.C++) return 0 ;;
+    *.h|*.hh|*.hxx|*.hpp|*.h++|*.H|*.HH|*.Hpp|*.HPP|*.HXX|*.H++) return 0 ;;
+    *.java|*.idl|*.inc) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 function exit_err() {
 	ecode=127
 	test -n "$1" && { ecode="$1"; shift; }
@@ -41,12 +60,21 @@ function exit_err() {
 	exit $ecode
 }
 function less_if_not_empty() {
-	if IFS= read first_line; then
-	  { echo "$first_line" ; cat ; } | less -R "$@"
-        fi
+        cat | less -X -R "$@"
+        # cat | less -FX -R "$@"
+	#if IFS= read first_line; then
+	#  { echo "$first_line" ; cat ; } | less -R "$@"
+        #fi
 }
 function less_if_paging() {
   less -FX -R "$@"
+}
+function grep_words() {
+  ( set -Eeuo pipefail				# fail early
+    git --no-pager diff -U0 "HEAD..$1" |	# examine all branch changes
+      egrep "^+.*$2\b" |			# search words in additions
+      sed 's/^\+//' |				# keep interesting lines literally
+      git --no-pager grep -nFf - )		# catch lines if they remained in tree
 }
 
 # configure for terminals with ANSI color escapes
@@ -64,6 +92,7 @@ test -t 1 -a -t 0 && match $'*\e[31m*' "`tput setaf 1 2>/dev/null`" && {
 # find repository
 match '*/yyhelp*' "/$0" && YYHELP=1	# no repo required
 gitdir="$(git rev-parse --git-dir 2>/dev/null)"
+gittoplevel="$(git rev-parse --show-toplevel 2>/dev/null)"
 if test -f "$gitdir/HEAD" ; then
 	githead=`git symbolic-ref -q HEAD || echo HEAD`; git rev-parse --verify "$githead" >/dev/null 2>&1 || githead=
 	gitprefix="$(git rev-parse --show-prefix)" ; test -z "$gitprefix" && gitprefix=. # no subdir support if GIT_DIR is set
@@ -87,14 +116,18 @@ function require_master() { # <message>
 function list_committable() { # [FILES...]
     test -s "$gitdir/commit-ignore" && commitignore="$gitdir/commit-ignore" || commitignore=
     test -z "$*" && commitdir=. || commitdir=
-    stripprefix="$gitprefix"
+    test "$BARE_PATHS" = true && stripprefix="" || stripprefix="$gitprefix"
     test -n "$stripprefix" -a "${stripprefix: -1}" != / && stripprefix="$stripprefix/" # force trailing /
     git diff-index --name-status --no-renames HEAD -- $commitdir "$@" | while IFS="$TAB" read -r mode file ; do
 	case "$mode" in
 	    D)	test -n "$(git diff-files -- "$file")" && mode=! ;;
 	    M)	test -n "$commitignore" && fgrep -qx "$file" "$commitignore" && mode=n ;;
 	esac
-	echo "$mode  ${file#$stripprefix}"
+	if test "$BARE_PATHS" = true ; then
+	  echo "${file#$stripprefix}"
+	else
+	  echo -e "$mode\t${file#$stripprefix}"
+	fi
     done
 }
 function has_diff {
@@ -106,9 +139,17 @@ function echo_signoff {
   echo # separating newline before signoff section
   git var GIT_COMMITTER_IDENT | sed -e 's/>.*/>/ ; s/^/Signed-off-by: /'
 }
+sanitize_branchname() {
+  echo "$*" | sed 's,:,/,g ; s,[^a-zA-Z0-9/_+-],_,g'
+}
 
 # GIT commands
-case "/$0" in
+gitcommand="/$(basename "$0")"
+test "$gitcommand" = '/yy' && {
+  gitcommand="$1"
+  shift
+}
+case "$gitcommand" in
 */yyadd)	exec git update-index --add -- "$@" ;;
 */yyblame)	test -z "$*" && exec yyhelp
 		git blame -- "$@" | {
@@ -162,17 +203,41 @@ case "/$0" in
 		# update stat info for list_committable
 		git update-index --refresh --verbose
 		# construct commit message
-		touch "$GIT_DIR/commit-editmsg.txt" || exit $? # abort if not writable
-		git log --oneline HEAD ^HEAD~$N | sed 's/^[^ ]*/#YY:/' > "$GIT_DIR/commit-editmsg.txt"
-		test $N -gt 0 || echo >> "$GIT_DIR/commit-editmsg.txt"
-		echo_signoff >> "$GIT_DIR/commit-editmsg.txt"
-		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
+		echo -n > "$GIT_DIR/YYCOMMIT.txt" || exit $? # abort if not writable
+		BARE_PATHS=true list_committable "$@" > "$GIT_DIR/commit-editmsg.lst"
+		while read line ; do
+		  #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
+		  f=$(printf %s "$line" ;)
+		  B="${f#*/}";	# strip root dir
+		  if test "$B" != "$f" ; then
+		    D="${f%%/*}"; # keep only root dir
+		    D="${D#.}"; # strip leading dot
+		    #if is_cc_file "$B" ; then
+		    #  echo "${D^^*}: ${B%.*}:" >> "$GIT_DIR/YYCOMMIT.txt" ;
+		    #else
+		    #  echo "${D^^*}: $B:" >> "$GIT_DIR/YYCOMMIT.txt" ;
+		    #fi
+		    echo "${D^^*}: $B:" >> "$GIT_DIR/YYCOMMIT.txt" ;
+		  else
+		    echo "${f}: " >> "$GIT_DIR/YYCOMMIT.txt" ;
+		  fi
+		done < "$GIT_DIR/commit-editmsg.lst"
+		rm -f "$GIT_DIR/commit-editmsg.lst"
+		GITHISTORY=$(git log --oneline HEAD ^HEAD~$N | sed 's/^[^ ]*/#YY:/')
+		test -z "$GITHISTORY" || echo "${GITHISTORY}" >> "$GIT_DIR/YYCOMMIT.txt"
+		YYCOMMIT_SIGNOFF=$(git config --get yycommit.signoff)
+		if test "${YYCOMMIT_SIGNOFF:-true}" != true ; then
+		  echo >> "$GIT_DIR/YYCOMMIT.txt"
+		else
+		  echo_signoff >> "$GIT_DIR/YYCOMMIT.txt"
+		fi
+		cat >> "$GIT_DIR/YYCOMMIT.txt" <<-_EOF_HERE
 		#YY: ----------------------------------------------------------------------
 		#YY: Files to be committed (detected by "#YY:F"):
 		#YY:
 _EOF_HERE
-		list_committable "$@" | sed 's/^/#YY:F   /' >> "$GIT_DIR/commit-editmsg.txt"
-		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
+		list_committable "$@" | sed 's/^/#YY:F   /' >> "$GIT_DIR/YYCOMMIT.txt"
+		cat >> "$GIT_DIR/YYCOMMIT.txt" <<-_EOF_HERE
 		#YY:
 		#YY: Author:
 		#YY: $AIDENT
@@ -180,30 +245,31 @@ _EOF_HERE
 		#YY: $CIDENT
 		#YY:
 _EOF_HERE
-		yyinfo | sed 's/^/#YY: /' >> "$GIT_DIR/commit-editmsg.txt"
-		cat >> "$GIT_DIR/commit-editmsg.txt" <<-_EOF_HERE
+		yyinfo | sed 's/^/#YY: /' >> "$GIT_DIR/YYCOMMIT.txt"
+		cat >> "$GIT_DIR/YYCOMMIT.txt" <<-_EOF_HERE
 		#YY:
 		#YY: (The "#YY:" prefixed lines are ignored for commit messages)
 _EOF_HERE
 		# edit commit message
-		grep -q '^#YY:F ' "$GIT_DIR/commit-editmsg.txt" || exit_err 0 "** Nothing to commit."
+		grep -q '^#YY:F ' "$GIT_DIR/YYCOMMIT.txt" || exit_err 0 "** Nothing to commit."
 		ED=`git config --get core.editor`
-		${ED:-joe} "$GIT_DIR/commit-editmsg.txt" ||
-		  exit_err 3 "** Aborting commit, editing commit message failed: $GIT_DIR/commit-editmsg.txt"
+		MD5USELESS=`grep -v -i '^#YY:' < "$GIT_DIR/YYCOMMIT.txt" | git stripspace | md5sum`
+		${ED:-joe} "$GIT_DIR/YYCOMMIT.txt" ||
+		  exit_err 3 "** Aborting commit, editing commit message failed: $GIT_DIR/YYCOMMIT.txt"
 		# verify user's commit message
-		grep -v -i '^#YY:' < "$GIT_DIR/commit-editmsg.txt" > "$GIT_DIR/commit-msg.txt" || exit $?
-		$verify_msg && test -x "$GIT_DIR/hooks/commit-msg" && { "$GIT_DIR/hooks/commit-msg" "$GIT_DIR/commit-msg.txt" || exit $? ; }
-		mlines=`git stripspace < "$GIT_DIR/commit-msg.txt" | wc -l`
-		test 0 -lt "$mlines" || exit_err 3 "** Aborting commit, missing commit message..."
+		$verify_msg && test -x "$GIT_DIR/hooks/commit-msg" && { "$GIT_DIR/hooks/commit-msg" "$GIT_DIR/YYCOMMIT.txt" || exit $? ; }
+		mlines=`git stripspace < "$GIT_DIR/YYCOMMIT.txt" | wc -l`
+		md5now=`grep -v -i '^#YY:' < "$GIT_DIR/YYCOMMIT.txt" | git stripspace | md5sum`
+		test 0 -lt "$mlines" -a "$md5now" != "$MD5USELESS" || exit_err 3 "** Aborting commit, missing commit message..."
 		# save current index around commit (since GIT_INDEX_FILE=tmpindex git-commit is buggy)
 		TMPINDEX=`mktemp "$GIT_DIR/.precommittindex$$.XXXXXX"` && cp -p "$GIT_DIR/index" "$TMPINDEX" || exit_err 9 "$0: failed to create temporary file"
 		trap 'mv -f "$TMPINDEX" "$GIT_DIR/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM
 		# unstage everything in index
 		git read-tree HEAD
 		# stage files from commit message
-		grep "^#YY:F " "$GIT_DIR/commit-editmsg.txt" |                  # filter #YY:F
+		grep "^#YY:F " "$GIT_DIR/YYCOMMIT.txt" |                     # filter #YY:F
 		  sed -e "s/^#YY:F \+//" | {                                    # extract file names
-                    while IFS=" " read -r mode file ; do
+                    while IFS=" 	" read -r mode file ; do
 		      case "$mode" in
 		      D)  	git update-index --force-remove -- "$file" || exit_err 5 "** Aborting commit, removing failed: $file" ;;
 		      A|M)	git update-index --add          -- "$file" || exit_err 6 "** Aborting commit, adding failed: $file" ;;
@@ -213,13 +279,13 @@ _EOF_HERE
 		      esac
 		    done
 		  }
-		rm -f "$GIT_DIR/commit-editmsg.txt"
+		sed '/^#YY:/d' -i "$GIT_DIR/YYCOMMIT.txt"
 		# abort for empty committs
 		git diff-index --cached HEAD | grep -q '.' || exit_err 0 "** Nothing to commit."
 		# actually commit changes
-		git commit -F "$GIT_DIR/commit-msg.txt" ; ccode=$?
+		git commit -F "$GIT_DIR/YYCOMMIT.txt" ; ccode=$?
 		# cleanup, restore old index and force update on comitted files
-		test 0 = $ccode && rm -f "$GIT_DIR/commit-msg.txt" "$GIT_DIR/commit-editmsg.txt"
+		test 0 = $ccode && rm -f "$GIT_DIR/YYCOMMIT.txt"
 		mv -f "$TMPINDEX" "$GIT_DIR/index"
 		trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM
 		git update-index --refresh --again > /dev/null  # update stat info
@@ -237,9 +303,10 @@ _EOF_HERE
 		esac; done
 		git update-index --refresh > /dev/null
 		CWD=; test -z "$*" && CWD=. # run diff relative to CWD, just like yycommit commits relative to CWD
+		git diff --exit-code --quiet HEAD -- . || clear
 		COLUMNS=999999 git diff --diff-algorithm=histogram $DIFFB -C $STAT $COLOR "$rev" -- $CWD "$@" | $OUT ;;
 */yygc)		test -n "$*" && exec yyhelp
-		exec git gc --prune ;;
+		exec git gc --prune --aggressive ;;
 */yyHistoryGrep)
 		REV= ; test "x$1" = "x-r" && { shift; REV=--reverse ; }
 		test "$#" = 1 || exec yyhelp
@@ -278,8 +345,9 @@ _EOF_HERE
 		git tag -n1 -l '*' ;;
 */yymerge)	test "$#" -eq 1 || exec yyhelp
     		BRANCH="$1"
-		git rev-parse -q --verify "$BRANCH^0" || exit_err 3 "$SCRIPTNAME: unknown revision: $rev"
+		git rev-parse -q --verify "$BRANCH^0" >/dev/null || exit_err 3 "$SCRIPTNAME: unknown revision: $rev"
 		test -e "$gitdir/MERGE_MSG" && exit_err 3 "$SCRIPTNAME: $gitdir/MERGE_MSG: another merge already in progress?"
+		grep_words "$BRANCH" '\b(TODO|FIXME)' # && exit 1 # abort if work items are present
 		SEP="^^^^^^^^^^^^^^^^^^^^^^^^^^"
 		echo -e "$SEP MERGE-DRAFT $SEP # DELETE THIS" > "$gitdir/MERGE_MSG"
 		echo -e "Merge branch '$BRANCH'\n\n* $BRANCH:" >> "$gitdir/MERGE_MSG"
@@ -310,7 +378,7 @@ _EOF_HERE
 		read answ ; test "$answ" != "y" && exit 1
 		#exec git rebase -p --onto "$DEST" "$MERGEBASE" "$BRANCH"
 		exec  git rebase -i --onto "$DEST" "$MERGEBASE" "$BRANCH" ;;
-*/yyremove)	exec git update-index --force-remove -- "$@" ;;
+*/yyrm)		exec git rm --force -- "$@" ;;
 */yyreset)	test -n "$*" && exec yyhelp
 		exec git checkout -f HEAD ;;
 */yyrestore)	git ls-tree --full-name -r HEAD -- "$@" | git update-index --index-info # resurrect deleted
@@ -336,13 +404,16 @@ _EOF_HERE
 		git rev-list --pretty=oneline -n 1 "stash-$NAME" --
 		git checkout -f HEAD
 		exit 0 ;;
-*/yystatus)	test -z "$*" || match '-[tuc]' "$*" || exec yyhelp
+*/yystatus)	test -z "$*" || match '-[citu]' "$*" || exec yyhelp
 		git update-index --refresh > /dev/null	# update stat info
 		test -e $gitdir/info/exclude && EXCLUDE_FROM=--exclude-from=$gitdir/info/exclude || EXCLUDE_FROM=
 		! match '*-[tc]*' "$*" &&	# list unknown files
-		  git ls-files --others --directory $EXCLUDE_FROM --exclude-per-directory=.gitignore |
-		    { test " $*" != " -u" && sed 's,^,?  ,' || sed 's,/$,,' ; }
-		test " $*" != " -u" && {	# list non-unknown files
+		  git ls-files --others --directory $EXCLUDE_FROM --exclude-per-directory=.gitignore | {
+			test " $*" != " -u" || sed 's,/$,,'
+			test " $*" != " -i" || sed 's,^,/,; s,\(\.\),\\\1,g'
+			test "_$*" != "_"   || sed 's,^,?  ,'
+		    }
+		match '-[iu]' "$*" || {		# list known files
 		  if test -z "$githead" ; then	# empty history, list new files
 		    git ls-files | sed 's/^/A  /'
 		  else				# list known files, path-relative
@@ -354,7 +425,10 @@ _EOF_HERE
 		exec git tag "$1" ;;
 */yytagdel)	test -z "$*" && exec yyhelp
 		match "* -*" " $*" && exec yyhelp
-		exec git tag -d "$1" ;;
+		while test "$1" ; do
+		  git tag -d "$1" || exit $?
+		  shift
+		done ;;
 */yyuncommit)	test -n "$*" && exec yyhelp
 		exec git reset --mixed -N HEAD~1 ;;
 */yyview)	test -n "$*" && exec yyhelp
@@ -365,12 +439,18 @@ _EOF_HERE
 */yywarp)	test -z "$*" && exec yyhelp
 		git rev-parse --verify "$1" >/dev/null 2>&1 || exit_err 3 "$0: unknown revision: $1"
 		exec git checkout "$1" ;;
+pr)		B=$(sanitize_branchname "$2")
+		(set -x ; git fetch origin "pull/$1/head:$B")
+		;;
+todo)		exec git commit -s --allow-empty -m '#========== TODO ==========' -e ;;
+log1)		exec git log --graph --decorate=short --abbrev=5 --abbrev-commit --date=relative \
+		     --pretty='%C(auto)%h%Creset%C(auto)%d # %s %C(cyan)(%ar) %Cblue<%aN>' "$@" ;;
 *)		test "$YYHELP" || { echo "`basename \"$0\"`: No such command" >&2 ; exit 9 ; } ;;
 esac
 test "$YYHELP" || exit 0 # successful command execution
 
 YYHELP_ALIASES="yyadd yyblame yybranch yybranchdel yyChangeLog yycommit yydiff yygc yyHistoryGrep
-                yyinfo yylsbranches yylstags yymerge yypull yypushpull yyremove yyrebase yyreset yyrestore
+                yyinfo yylsbranches yylstags yymerge yypull yypushpull yyrm yyrebase yyreset yyrestore
                 yystash yystatus yytag yytagdel yyuncommit yyview yywarp"
 
 test "x$1" = "x--install-aliases" && {
@@ -425,17 +505,18 @@ test "x$1" = "x--uninstall-aliases" && {
 	echo -e '\tyylsbranches              - list branches'
 	echo -e '\tyylstags                  - list tags'
 	echo -e '\tyymerge BRANCH            - merge BRANCH into current branch'
+	echo -e '\tyy pr <PR#> <BRANCHNAME>  - fetch pull-request PR# into BRANCHNAME'
 	echo -e '\tyypull                    - pull upstream sources'
 	echo -e '\tyypushpull                - push & pull upstream sources'
 	echo -e '\tyyrebase BRANCH NEWBASE   - rebase BRANCH onto NEWBASE'
-	echo -e '\tyyremove       [FILES...] - remove files from git repository'
+	echo -e '\tyyrm           [FILES...] - force remove files from git repository'
 	echo -e '\tyyrebase BRANCH [HEAD]    - checkout BRANCH, and rebase onto HEAD'
 	echo -e '\tyyreset                   - reset (revert to HEAD) all files in the tree'
 	echo -e '\tyyrestore      [FILES...] - forcefully recheckout specific files'
 	echo -e '\tyystash BRANCHNAME        - stash tree modifications into branch'
-	echo -e '\tyystatus       [-t|-u|-c] - display working tree status'
+	echo -e '\tyystatus    [-c|-i|-t|-u] - display working tree status'
+	echo -e '\t                            -c: commit style; -i: .gitignore style'
 	echo -e '\t                            -t: trim unknown; -u: show unknown;'
-	echo -e '\t                            -c: trim and use commit message style'
 	echo -e '\tyytag    <tag> [revision] - add tag'
 	echo -e '\tyytagdel <tag>            - delete tag'
 	echo -e '\tyyuncommit                - undo the last commit (must be unpushed)'
