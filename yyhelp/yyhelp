@@ -205,8 +205,9 @@ yyinfo()
   REPO="`basename \"$(git rev-parse --show-toplevel)\" `"
   REPODIR="`git rev-parse --show-cdup`" || { test -z "$REPODIR" && REPODIR=. ; }
   test -z "$REPODIR" && CURRENT=. || CURRENT=`realpath --relative-to="$REPODIR" ./`
-  OC="`git rev-parse --verify origin 2>/dev/null`"; test -n "$OC" && OC="`date -d \"$(git log -n1 --pretty=format:%cD $OC)\" '+%F %T %z'` # $OC"
   HC="`git rev-parse --verify HEAD   2>/dev/null`"; test -n "$HC" && HC="`date -d \"$(git log -n1 --pretty=format:%cD $HC)\" '+%F %T %z'` # $HC"
+  # origin/HEAD is not always present
+  RH="`git rev-parse --verify origin 2>/dev/null`" || : ; test -n "$RH" && RH="`date -d \"$(git log -n1 --pretty=format:%cD $RH)\" '+%F %T %z'` # $RH"
   HSYM=$(git symbolic-ref HEAD || git rev-parse HEAD) && HSYM=${HSYM#refs/heads/}
   true			&& echo "GIT-Repo: $REPO"
   true			&& echo "URL:      $GITURL"
@@ -214,7 +215,8 @@ yyinfo()
   true			|| echo "Method:   git-push and git-pull are used for updates"
   test -n "$HC"		&& echo "HEAD:     $HC"
   test -n "$HSYM"	&& echo "BRANCH:   $HSYM"
-  test -n "$OC"		&& echo "Origin:   $OC"
+  test -n "$RH"		&& echo "Origin:   $RH"
+  return 0
 )
 
 # yymerge
