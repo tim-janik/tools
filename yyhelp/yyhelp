@@ -318,6 +318,12 @@ yystatus()
   }
 )
 
+# yywarp
+yywarp()
+(
+  git checkout "$@"
+)
+
 # yywipe
 yywipe()
 (
@@ -411,7 +417,6 @@ __yyhelp_aliases()
   alias yyrestore='git restore --source HEAD'
   alias yyrm='git rm --force'
   alias yyuncommit='git reset --mixed -N HEAD~1'
-  alias yywarp='git checkout'
   alias yyview='(gitk --all &)'
   alias yylsbranches='LESS="$LESS -F" git branch -a -vv'
   alias yylstags='LESS="$LESS -F" git tag -n1 -l \*'
@@ -436,7 +441,7 @@ __yyhelp_aliases()
   __git_complete yystash __git_complete_refs
   complete -F __yyhelp_compgen_tags yytagdel
   __git_complete yywarp _git_checkout
-  complete -F _yyhelp_complete_branch yymerge yywarp
+  complete -F __yyhelp_compgen_refs yymerge yywarp
 }
 
 # handle arguments
