@@ -188,10 +188,12 @@ _EOF_HERE
 yydiff()
 (
   set -Eeuo pipefail #-x
-  if __yyhelp_match ' -- ' "$*" ; then
+  if __yyhelp_match '* -- *' " $* " ; then
     LESS="$LESS -+c" git diff HEAD "$@"
-  else
+  elif __yyhelp_match '* -*' " $* " ; then
     LESS="$LESS -+c" git diff HEAD "$@" -- .
+  else
+    LESS="$LESS -+c" git diff HEAD -- "${@:-.}"
   fi
 )
 
@@ -200,7 +202,7 @@ yyinfo()
 (
   set -Eeuo pipefail #-x
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
-  GITURL="`git config --get remote.origin.url`"
+  GITURL="`git config --get remote.origin.url`" || :
   test -z "$GITURL" && GITURL="`cd \"$gitdir\" && pwd`" # no url, must be local
   REPO="`basename \"$(git rev-parse --show-toplevel)\" `"
   REPODIR="`git rev-parse --show-cdup`" || { test -z "$REPODIR" && REPODIR=. ; }
@@ -326,13 +328,13 @@ yywarp()
   git checkout "$@"
 )
 
-# yywipe
-yywipe()
+# yypurge
+yypurge()
 (
   set -Eeuo pipefail #-x
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
-  git diff --src-prefix=HEAD --dst-prefix=worktree > "$gitdir/yywipe.tmpdiff"
-  test -s "$gitdir/yywipe.tmpdiff" && mv "$gitdir/yywipe.tmpdiff" "$gitdir/yywipe.diff" || rm -f "$gitdir/yywipe.tmpdiff"
+  git diff --src-prefix=HEAD --dst-prefix=worktree > "$gitdir/yypurge.tmpdiff"
+  test -s "$gitdir/yypurge.tmpdiff" && mv "$gitdir/yypurge.tmpdiff" "$gitdir/yypurge.diff" || rm -f "$gitdir/yypurge.tmpdiff"
   git checkout -f HEAD
 )
 
@@ -357,6 +359,7 @@ ${B}SYNOPSIS$N
 	yyblame [FILE]      Show revision and modifications per source code line
 	yycommit [-[0-9] …] Use an editor to compose a commit and select files
 	yydiff [--] [FILE]  Compare HEAD against working tree
+	yyhelp              Show yyhelp command descriptions
 	yyinfo              Show repository information
 	yyll                One line log of all commits, with author and date
 	yylr                One line log of all git refs
@@ -366,7 +369,8 @@ ${B}SYNOPSIS$N
 	yylstags            List tags
 	yypull              Pull sources from upstream
 	yypushpull [REMOTE] Push pending changes, else pull from upstream
-	yyhelp              Show yyhelp command descriptions
+	yypurge             Reset the worktree files to match a clean checkout
+	                    (the last yypurge leaves changes in .git/yypurge.diff)
 	yyrestore [FILE]    Restore a file from HEAD
 	yyrestore [FILE]    Restore a file from HEAD
 	yyrm [FILE]         Force remove file from working tree
@@ -378,8 +382,6 @@ ${B}SYNOPSIS$N
 	yyuncommit          Undo the last commit (must not be pushed)
 	yyview              Run gitk(1) with all branches and tags in the background
 	yywarp <BRANCH>     Checkout new branch
-	yywipe              Reset the worktree files to match a clean checkout
-	                    (the last yywipe leaves changes in .git/yywipe.diff)
 
 ${B}DESCRIPTION$N
 	The yyhelp set of commands provide simple aliases around Git(7), that
