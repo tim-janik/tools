@@ -267,7 +267,8 @@ yypushpull()
 yystash()
 (
   set -Eeuo pipefail #-x
-  die() { echo "$*" 2>/dev/null ; exit -1 ; }
+  die() { echo "yystash: $*" 2>/dev/null ; exit -1 ; }
+  test -n "${1:-}" || die "missing branch name"
   BRANCHNAME="$1"
   SYMBOLICHEAD=$(git symbolic-ref HEAD 2>/dev/null || git rev-parse HEAD)
   SYMBOLICHEAD=${SYMBOLICHEAD#refs/heads/}
@@ -275,15 +276,15 @@ yystash()
   git update-index -q --refresh # update unmerged and needs-updating state
   DIFFSTAT=$(git diff --stat --ignore-submodules HEAD --)
   test -z "$DIFFSTAT" && return # nothing to stash
-  git show-ref -q --heads "stash-$BRANCHNAME" && die "`basename $0`: Branch already exists: stash-$BRANCHNAME"
-  TFILES=`mktemp -t yystash$$XXXXXX.tmp` && touch $TFILES || die "$0: failed to create temporary file"
+  git show-ref -q --heads "stash-$BRANCHNAME" && die "Branch already exists: stash-$BRANCHNAME"
+  TFILES=`mktemp -t yystash$$XXXXXX.tmp` && touch $TFILES || die "failed to create temporary file"
   trap "rm -f $TFILES" 0 HUP INT QUIT TRAP USR1 PIPE TERM
   # check working tree changes into index
   TREE_HASH=$(git diff --name-only -z HEAD -- > "$TFILES" \
                 && git update-index -z --add --remove --stdin < "$TFILES" \
-                && git write-tree) || die "`basename $0`: failed to create tree object from index"
+                && git write-tree) || die "failed to create tree object from index"
   COMMIT_HASH=$({ printf 'STASH: %s\n\n' "$BRANCHNAME" ; printf 'WIP on %s: %s\n%s' "$SYMBOLICHEAD" "$HLINE" "$DIFFSTAT" ; } \
-                  | git commit-tree $TREE_HASH -p HEAD) || die "`basename $0`: failed to commit tree $tree_hash"
+                  | git commit-tree $TREE_HASH -p HEAD) || die "failed to commit tree $tree_hash"
   git branch "stash-$BRANCHNAME" $COMMIT_HASH || return $?
   git rev-list --pretty=oneline -n 1 "stash-$BRANCHNAME" --
   git checkout -f HEAD
