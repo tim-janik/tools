@@ -24,6 +24,10 @@ now = datetime.datetime.now()
 # Parser for retention configuration
 # Syntax: no|<number>{y|m|w|d|h}|latest|all
 class Retention:
+  def asint (self, string):
+    if string == '*':
+      return 9999
+    return int (string)
   def __init__ (self, string):
     self.none = False
     self.latest = False
@@ -37,11 +41,11 @@ class Retention:
     for word in string.split():
       m = re.match (r'(\d+y)|(\d+m)|(\d+w)|(\d+d)|(\d+h)|(latest)|(all)|(no)', word)
       if not m:         continue
-      elif m[1]:        self.yearly = int (m[1][:-1])
-      elif m[2]:        self.monthly = int (m[2][:-1])
-      elif m[3]:        self.weekly = int (m[3][:-1])
-      elif m[4]:        self.daily = int (m[4][:-1])
-      elif m[5]:        self.hourly = int (m[5][:-1])
+      elif m[1]:        self.yearly = self.asint (m[1][:-1])
+      elif m[2]:        self.monthly = self.asint (m[2][:-1])
+      elif m[3]:        self.weekly = self.asint (m[3][:-1])
+      elif m[4]:        self.daily = self.asint (m[4][:-1])
+      elif m[5]:        self.hourly = self.asint (m[5][:-1])
       elif m[6]:        self.latest = True
       elif m[7]:        self.all = True
       elif m[8]:        self.none = True
