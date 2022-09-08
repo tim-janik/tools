@@ -161,9 +161,10 @@ class BackupCollector:
         self.months += [ Slot (bound) ]
         bound = subtract_month (bound)
     # year slots
-    for i in range (self.retention.yearly + 1):
-      bound = datetime.datetime (now.year - i, 1, 1, 0, 0)
-      self.years += [ Slot (bound) ]
+    if self.retention.yearly:
+      for i in range (self.retention.yearly + 1):
+        bound = datetime.datetime (now.year - i, 1, 1, 0, 0)
+        self.years += [ Slot (bound) ]
   def feed (self, name):
     b = Backup (name)
     if not b.filetime:
