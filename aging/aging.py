@@ -29,6 +29,8 @@ class Retention:
       return 9999
     return int (string)
   def __init__ (self, string):
+    string = re.sub (r'[,;:]', ' ', string)
+    self.unknown = string.strip() == ''
     self.none = False
     self.latest = False
     self.all = False
@@ -179,6 +181,7 @@ class BackupCollector:
     for name in nlist:
       self.feed (name)
   def classify (self, name, slotprefix = ''):
+    if self.retention.unknown:                          return Classification.UNKNOWN
     if not name in self.collection:                     return Classification.UNKNOWN
     if self.retention.all:                              return Classification.ALL
     if self.retention.none:                             return Classification.NONE
