@@ -185,13 +185,14 @@ class BackupCollector:
     if self.retention.unknown:                          return Classification.UNKNOWN
     if not name in self.collection:                     return Classification.UNKNOWN
     if self.retention.all:                              return Classification.ALL
-    if self.retention.none:                             return Classification.NONE
-    if self.latestb and self.latestb.name == name:      return Classification.LATEST
+    if self.retention.latest and \
+       self.latestb and self.latestb.name == name:      return Classification.LATEST
     if self.find_in_slots (self.hours, name):           return Classification.HOUR
     if self.find_in_slots (self.days, name):            return Classification.DAY
     if self.find_in_slots (self.weeks, name):           return Classification.WEEK
     if self.find_in_slots (self.months, name):          return Classification.MONTH
     if self.find_in_slots (self.years, name):           return Classification.YEAR
+    if self.retention.none:                             return Classification.NONE
     else:                                               return Classification.DISCARD
 
 # Arguments
