@@ -241,7 +241,7 @@ def process_args (args):
     if arg[0]: short_options +=   arg[0].lstrip ('-') + (':' if arg[2] else '')
     if arg[1]: long_options  += [ arg[1].lstrip ('-') + ('=' if arg[2] else '') ]
   options, arguments = getopt.gnu_getopt (args, short_options, long_options)
-  config = { 'keep': '', 'discard': '', 'print': '' }
+  config = { 'keep': None, 'discard': None, 'print': None }
   for k,v in options:
     if   k in ('-h', '--help'):         usage(); sys.exit (0)
     elif k in ('-k', '--keep'):         config['keep'] = v
@@ -254,7 +254,7 @@ def process_args (args):
 config = process_args (sys.argv[1:])
 
 # --keep
-if config['keep']:
+if config['keep'] != None:
   retention = Retention (config['keep'])
   collector = BackupCollector (retention)
   collector.collect (config['filenames'])
@@ -265,7 +265,7 @@ if config['keep']:
     print (name)
 
 # --discard
-if config['discard']:
+if config['discard'] != None:
   retention = Retention (config['discard'])
   collector = BackupCollector (retention)
   collector.collect (config['filenames'])
@@ -275,7 +275,7 @@ if config['discard']:
       print (name)
 
 # --print
-if config['print']:
+if config['print'] != None:
   retention = Retention (config['print'])
   collector = BackupCollector (retention)
   collector.collect (config['filenames'])
@@ -285,5 +285,5 @@ if config['print']:
     print ('%-15s' % (('first of ' if cls._value_[1] else '') + cls._name_), name)
 
 # fallback
-if not config['keep'] + config['discard'] + config['print']:
+if not config['keep'] and not config['discard'] and not config['print']:
   usage (short = True)
