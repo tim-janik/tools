@@ -323,6 +323,15 @@ yystatus()
   }
 )
 
+# yyswitch
+yyswitch()
+{
+  test ! -z "${__yyswitch_cmd}" ||
+    git switch -h 2>/dev/null | grep -Fq branch &&
+      __yyswitch_cmd=switch || __yyswitch_cmd=checkout
+  git $__yyswitch_cmd "$@"
+}
+
 # yyview
 yyview()
 (
@@ -333,7 +342,7 @@ yyview()
 # yywarp
 yywarp()
 (
-  git checkout "$@"
+  yyswitch "$@"
 )
 
 # yypurge
@@ -386,10 +395,11 @@ ${B}SYNOPSIS$N
 	                    -c: commit style; -i: .gitignore style;
 	                    -t: trim unknown; -u: show unknown;
 	yystash <BRANCH>    Stash tree modifications into a branch
+	yyswitch <BRANCH>   Switch to another branch
 	yytagdel <TAG…>     Delete tags
 	yyuncommit          Undo the last commit (must not be pushed)
 	yyview              Run gitk(1) with all branches and tags in the background
-	yywarp <BRANCH>     Checkout new branch
+	yywarp <BRANCH>     Alias for yyswitch <BRANCH>
 
 ${B}DESCRIPTION$N
 	The yyhelp set of commands provide simple aliases around Git(7), that
@@ -451,8 +461,14 @@ __yyhelp_aliases()
   complete -W '-c -i -t -u' yystatus
   __git_complete yystash __git_complete_refs
   complete -F __yyhelp_compgen_tags yytagdel
-  __git_complete yywarp _git_checkout
-  complete -F __yyhelp_compgen_refs yymerge yywarp
+  complete -F __yyhelp_compgen_refs yymerge
+  if [[ $(type -t _git_switch) == function ]] ; then
+    __git_complete yyswitch _git_switch
+    __git_complete yywarp _git_switch
+  else
+    __git_complete yyswitch _git_checkout
+    __git_complete yywarp _git_checkout
+  fi
 }
 
 # handle arguments
