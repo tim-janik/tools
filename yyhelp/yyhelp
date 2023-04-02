@@ -43,6 +43,26 @@ __yyhelp_list_committable() # [FILES...]
   done
 )
 
+# commit_template
+__yyhelp_commit_template() # [FILES...]
+(
+  set -Eeuo pipefail #-x
+  BARE_PATHS=true __yyhelp_list_committable "$@" > "$gitdir/yycommit-template.lst"
+  while read line ; do
+    #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
+    f=$(printf %s "$line" ;)
+    B="${f#*/}";	# strip root dir
+    if test "$B" != "$f" ; then
+      D="${f%%/*}";	# keep only root dir
+      D="${D#.}";	# strip leading dot
+      echo "${D^^*}: $B:" ;
+    else
+      echo "${f}: " ;
+    fi
+  done < "$gitdir/yycommit-template.lst"
+  rm -f "$gitdir/yycommit-template.lst"
+)
+
 # __yyhelp_compgen_refs
 __yyhelp_compgen_refs()
 {
@@ -80,10 +100,15 @@ yytagdel()
 # yycommit
 yycommit()
 (
+  test "$1" == "${1#-p}" && PICK=false || { PICK=true; shift ; }
   test "$1" == "${1#-[0-9]}" && N=0 || { N=${1:1}; shift ; }
   set -Eeuo pipefail
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
   die() { echo "$*" 2>/dev/null ; exit -1 ; }
+  $PICK && {
+    __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
+    exec git commit -ps -t "$gitdir/YYCOMMIT.txt"
+  }
   SUBDIRECTORY_OK=Yes
   TAB=$'\t'
   test true == `git rev-parse --is-inside-work-tree 2>/dev/null` || die "$0: Command requires a git working tree"
@@ -101,20 +126,7 @@ yycommit()
   git update-index --refresh --verbose || :
   # construct commit message
   echo -n > "$gitdir/YYCOMMIT.txt" || exit $? # abort if not writable
-  BARE_PATHS=true __yyhelp_list_committable "$@" > "$gitdir/commit-editmsg.lst"
-  while read line ; do
-    #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
-    f=$(printf %s "$line" ;)
-    B="${f#*/}";  # strip root dir
-    if test "$B" != "$f" ; then
-      D="${f%%/*}"; # keep only root dir
-      D="${D#.}"; # strip leading dot
-      echo "${D^^*}: $B:" >> "$gitdir/YYCOMMIT.txt" ;
-    else
-      echo "${f}: " >> "$gitdir/YYCOMMIT.txt" ;
-    fi
-  done < "$gitdir/commit-editmsg.lst"
-  rm -f "$gitdir/commit-editmsg.lst"
+  __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
   GITHISTORY=$(git log --oneline HEAD ^HEAD~$N | sed 's/^[^ ]*/#YY:/')
   test -z "$GITHISTORY" || echo "${GITHISTORY}" >> "$gitdir/YYCOMMIT.txt"
   YYCOMMIT_SIGNOFF=$(git config --get yycommit.signoff) || :
@@ -234,7 +246,7 @@ yymerge()
   test -e "$gitdir/MERGE_MSG" && die "$0: $gitdir/MERGE_MSG: another merge already in progress?"
   git --no-pager diff -U0 "HEAD..$BRANCH" |	# examine all branch changes
     egrep "^+.*\b(XXX|WIP|FIXME)\b" &&		# work still to be done
-    exit 2
+    sleep 5
   SEP="^^^^^^^^^^^^^^^^^^^^^^^^^^"
   echo -e "$SEP MERGE-DRAFT $SEP # DELETE THIS" > "$gitdir/MERGE_MSG"
   echo -e "Merge branch '$BRANCH'\n\n* $BRANCH:" >> "$gitdir/MERGE_MSG"
@@ -323,6 +335,15 @@ yystatus()
   }
 )
 
+# yyswitch
+yyswitch()
+{
+  test ! -z "${__yyswitch_cmd}" ||
+    git switch -h 2>/dev/null | grep -Fq branch &&
+      __yyswitch_cmd=switch || __yyswitch_cmd=checkout
+  git $__yyswitch_cmd "$@"
+}
+
 # yyview
 yyview()
 (
@@ -333,6 +354,8 @@ yyview()
 # yywarp
 yywarp()
 (
+  test "$1" != "-" || exec git switch -
+  test -z "$(git branch -l "$1")" || exec git switch "$1"
   git checkout "$@"
 )
 
@@ -386,10 +409,11 @@ ${B}SYNOPSIS$N
 	                    -c: commit style; -i: .gitignore style;
 	                    -t: trim unknown; -u: show unknown;
 	yystash <BRANCH>    Stash tree modifications into a branch
+	yyswitch <BRANCH>   Switch to another branch
 	yytagdel <TAG…>     Delete tags
 	yyuncommit          Undo the last commit (must not be pushed)
 	yyview              Run gitk(1) with all branches and tags in the background
-	yywarp <BRANCH>     Checkout new branch
+	yywarp <COMMITISH>  Use yyswitch for branches or force checkout
 
 ${B}DESCRIPTION$N
 	The yyhelp set of commands provide simple aliases around Git(7), that
@@ -451,8 +475,13 @@ __yyhelp_aliases()
   complete -W '-c -i -t -u' yystatus
   __git_complete yystash __git_complete_refs
   complete -F __yyhelp_compgen_tags yytagdel
+  complete -F __yyhelp_compgen_refs yymerge
+  if [[ $(type -t _git_switch) == function ]] ; then
+    __git_complete yyswitch _git_switch
+  else
+    __git_complete yyswitch _git_checkout
+  fi
   __git_complete yywarp _git_checkout
-  complete -F __yyhelp_compgen_refs yymerge yywarp
 }
 
 # handle arguments
