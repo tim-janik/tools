@@ -43,6 +43,26 @@ __yyhelp_list_committable() # [FILES...]
   done
 )
 
+# commit_template
+__yyhelp_commit_template() # [FILES...]
+(
+  set -Eeuo pipefail #-x
+  BARE_PATHS=true __yyhelp_list_committable "$@" > "$gitdir/yycommit-template.lst"
+  while read line ; do
+    #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
+    f=$(printf %s "$line" ;)
+    B="${f#*/}";	# strip root dir
+    if test "$B" != "$f" ; then
+      D="${f%%/*}";	# keep only root dir
+      D="${D#.}";	# strip leading dot
+      echo "${D^^*}: $B:" ;
+    else
+      echo "${f}: " ;
+    fi
+  done < "$gitdir/yycommit-template.lst"
+  rm -f "$gitdir/yycommit-template.lst"
+)
+
 # __yyhelp_compgen_refs
 __yyhelp_compgen_refs()
 {
@@ -80,10 +100,15 @@ yytagdel()
 # yycommit
 yycommit()
 (
+  test "$1" == "${1#-p}" && PICK=false || { PICK=true; shift ; }
   test "$1" == "${1#-[0-9]}" && N=0 || { N=${1:1}; shift ; }
   set -Eeuo pipefail
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
   die() { echo "$*" 2>/dev/null ; exit -1 ; }
+  $PICK && {
+    __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
+    exec git commit -ps -t "$gitdir/YYCOMMIT.txt"
+  }
   SUBDIRECTORY_OK=Yes
   TAB=$'\t'
   test true == `git rev-parse --is-inside-work-tree 2>/dev/null` || die "$0: Command requires a git working tree"
@@ -101,20 +126,7 @@ yycommit()
   git update-index --refresh --verbose || :
   # construct commit message
   echo -n > "$gitdir/YYCOMMIT.txt" || exit $? # abort if not writable
-  BARE_PATHS=true __yyhelp_list_committable "$@" > "$gitdir/commit-editmsg.lst"
-  while read line ; do
-    #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
-    f=$(printf %s "$line" ;)
-    B="${f#*/}";  # strip root dir
-    if test "$B" != "$f" ; then
-      D="${f%%/*}"; # keep only root dir
-      D="${D#.}"; # strip leading dot
-      echo "${D^^*}: $B:" >> "$gitdir/YYCOMMIT.txt" ;
-    else
-      echo "${f}: " >> "$gitdir/YYCOMMIT.txt" ;
-    fi
-  done < "$gitdir/commit-editmsg.lst"
-  rm -f "$gitdir/commit-editmsg.lst"
+  __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
   GITHISTORY=$(git log --oneline HEAD ^HEAD~$N | sed 's/^[^ ]*/#YY:/')
   test -z "$GITHISTORY" || echo "${GITHISTORY}" >> "$gitdir/YYCOMMIT.txt"
   YYCOMMIT_SIGNOFF=$(git config --get yycommit.signoff) || :
