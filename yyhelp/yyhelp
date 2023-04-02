@@ -354,7 +354,9 @@ yyview()
 # yywarp
 yywarp()
 (
-  yyswitch "$@"
+  test "$1" != "-" || exec git switch -
+  test -z "$(git branch -l "$1")" || exec git switch "$1"
+  git checkout "$@"
 )
 
 # yypurge
@@ -411,7 +413,7 @@ ${B}SYNOPSIS$N
 	yytagdel <TAG…>     Delete tags
 	yyuncommit          Undo the last commit (must not be pushed)
 	yyview              Run gitk(1) with all branches and tags in the background
-	yywarp <BRANCH>     Alias for yyswitch <BRANCH>
+	yywarp <COMMITISH>  Use yyswitch for branches or force checkout
 
 ${B}DESCRIPTION$N
 	The yyhelp set of commands provide simple aliases around Git(7), that
@@ -476,11 +478,10 @@ __yyhelp_aliases()
   complete -F __yyhelp_compgen_refs yymerge
   if [[ $(type -t _git_switch) == function ]] ; then
     __git_complete yyswitch _git_switch
-    __git_complete yywarp _git_switch
   else
     __git_complete yyswitch _git_checkout
-    __git_complete yywarp _git_checkout
   fi
+  __git_complete yywarp _git_checkout
 }
 
 # handle arguments
