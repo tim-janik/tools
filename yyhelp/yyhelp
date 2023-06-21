@@ -258,7 +258,7 @@ yymerge()
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
   test -e "$gitdir/MERGE_MSG" && die "$0: $gitdir/MERGE_MSG: another merge already in progress?"
   git --no-pager diff -U0 "HEAD..$BRANCH" |	# examine all branch changes
-    egrep "^+.*\b(XXX|WIP|FIXME)\b" &&		# work still to be done
+    egrep "^\+.*\b(XXX|WIP|FIXME)\b" &&		# work still to be done
     sleep 5
   SEP="^^^^^^^^^^^^^^^^^^^^^^^^^^"
   echo -e "$SEP MERGE-DRAFT $SEP # DELETE THIS" > "$gitdir/MERGE_MSG"
