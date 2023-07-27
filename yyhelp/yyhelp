@@ -240,17 +240,23 @@ yyinfo()
 yymerge()
 (
   source "$(git --exec-path)/git-sh-setup" # die, require_work_tree, etc
-  if test "${1:-}" == '-m' ; then
+  if test "${1:-}" == '-m' ; then # merge into master
+    if test "${2:-}" == '' ; then # merge current branch  into master
+      BRANCH=$(git symbolic-ref HEAD) && BRANCH=${BRANCH#refs/heads/}
+    else
+      BRANCH="$2"
+    fi
     git describe --dirty | fgrep -qe -dirty && die "$0: working tree must not be dirty"
     for MAIN in master main trunk ; do
       test -n "$(git config --get branch.$MAIN.remote)" && {
-	yywarp $MAIN
+	yywarp $MAIN # master/trunk/main/etc
 	break
       }
     done
     shift
+  else
+    BRANCH="$1"
   fi
-  BRANCH="$1"
   set -Eeuo pipefail				# fail early *after* git-sh-setup
   git var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing commit author information"
   git var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing committer information"
@@ -506,4 +512,5 @@ while test $# -ne 0 ; do
     *)		shift ;;
   esac
 done
+
 true
