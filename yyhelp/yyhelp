@@ -286,6 +286,23 @@ yymerge()
   git merge --no-edit --no-ff -m "`cat $gitdir/MERGE_MSG`" $BRANCH && rm -f $gitdir/MERGE_MSG
 )
 
+# yypr
+yypr()
+(
+  set -Eeuo pipefail
+  die() { echo "$*" 2>/dev/null ; exit -1 ; }
+  ID="$1"
+  git describe --dirty | fgrep -qe -dirty && die "yypr: working tree must not be dirty"
+  command -V gh >/dev/null || die "yypr: command gh(1) required for pull requests"
+  command -V jq >/dev/null || die "yypr: command jq(1) required for pull requests"
+  PRBRANCH=pr"$ID"/$(gh pr view "$ID" --json author,headRefName | jq -r '(.author.login + "-" + .headRefName)')
+  ( set -x
+    git fetch origin pull/"$ID"/head:"$PRBRANCH"
+    git checkout "$PRBRANCH"
+  )
+  git --no-pager log -1 --oneline
+)
+
 # yypushpull
 yypushpull()
 (
@@ -418,6 +435,7 @@ ${B}SYNOPSIS$N
 	yylsbranches        List branches
 	yylstags            List tags
 	yymerge [-m] <BRANCH> Merge BRANCH; -m: first warp to master/main/trunk
+	yypr <ID>           Fetch and checkout Github pull request #ID
 	yypull              Pull sources from upstream
 	yypushpull [REMOTE] Push pending changes, else pull from upstream
 	yypurge             Reset the worktree files to match a clean checkout
