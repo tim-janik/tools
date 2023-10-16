@@ -488,7 +488,7 @@ __yyhelp_aliases()
   alias yylog='LESS="$LESS -F" git log --stat'
   alias yylp='LESS="$LESS -F" git log -p --stat'
   alias yypull='git pull'
-  alias yyrestore='git restore --source HEAD'
+  alias yyrestore='git restore --source HEAD --staged --worktree --'
   alias yyrm='git rm --force'
   alias yyuncommit='git reset --mixed -N HEAD~1'
   alias yylsbranches='LESS="$LESS -F" git branch -a -vv'
