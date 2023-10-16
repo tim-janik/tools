@@ -100,13 +100,20 @@ yytagdel()
 yycommit()
 (
   test "$1" == "${1#-p}" && PICK=false || { PICK=true; shift ; }
+  test "$1" == "-c" -a -n "${2:-}" && { CREATEBRANCH="$2"; shift; shift; } || CREATEBRANCH=
   test "$1" == "${1#-[0-9]}" && N=17 || { N=${1:1}; shift ; }
   set -Eeuo pipefail
+  test -x /usr/bin/gawk || gawk() { awk "$@" ; }
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
   die() { echo "$*" 2>/dev/null ; exit -1 ; }
+  test -n "$CREATEBRANCH" && git rev-parse --verify "$CREATEBRANCH" 2>/dev/null && die "yycommit: ref exists: $CREATEBRANCH"
   $PICK && {
     __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
-    exec git commit -ps -t "$gitdir/YYCOMMIT.txt" "$@"
+    test -z "$CREATEBRANCH" || git switch -C "$CREATEBRANCH"
+    git commit -ps -t "$gitdir/YYCOMMIT.txt" "$@" ; ccode=$?
+    test -z "$CREATEBRANCH" || git switch -
+    sync &
+    exit $ccode
   }
   SUBDIRECTORY_OK=Yes
   TAB=$'\t'
@@ -169,7 +176,7 @@ _EOF_HERE
   test 0 -lt "$mlines" -a "$md5now" != "$MD5USELESS" || die "** Aborting commit, missing commit message..."
   # save current index around commit (since GIT_INDEX_FILE=tmpindex git-commit is buggy)
   TMPINDEX=`mktemp "$gitdir/.precommittindex$$.XXXXXX"` && cp -p "$gitdir/index" "$TMPINDEX" || die "$0: failed to create temporary file"
-  trap 'mv -f "$TMPINDEX" "$gitdir/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM
+  trap 'mv -f "$TMPINDEX" "$gitdir/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM	# restore previous index on abort
   # unstage everything in index
   git read-tree HEAD
   # stage files from commit message
@@ -188,13 +195,17 @@ _EOF_HERE
   sed '/^#YY:/d' -i "$gitdir/YYCOMMIT.txt"
   # abort for empty committs
   git diff-index --cached HEAD | grep -q '.' || { echo "** Nothing to commit." >&2 && exit 0 ; }
+  # switch into new branch if requested
+  test -z "$CREATEBRANCH" || git switch -C "$CREATEBRANCH"
   # actually commit changes
   git commit -F "$gitdir/YYCOMMIT.txt" ; ccode=$?
   # cleanup, restore old index and force update on comitted files
   test 0 = $ccode && rm -f "$gitdir/YYCOMMIT.txt"
   mv -f "$TMPINDEX" "$gitdir/index"
-  trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM
-  git update-index --refresh --again > /dev/null || : # update stat info
+  trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM # cancel index restoration
+  git update-index --refresh --again > /dev/null || : # update stat info in index
+  # switch back to old branch if requested
+  test -z "$CREATEBRANCH" || git switch -
   sync &
   exit $ccode
 )
