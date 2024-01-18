@@ -157,7 +157,7 @@ _EOF_HERE
 	#YY:
 	#YY: (The "#YY:" prefixed lines are ignored for commit messages)
 _EOF_HERE
-  GITHISTORY=$((git log --oneline HEAD ^HEAD~$N 2>/dev/null || :) | sed 's/^[^ ]*/#YY:/')
+  GITHISTORY=$((git log --oneline HEAD -n "$N" 2>/dev/null || :) | sed 's/^[^ ]*/#YY:/')
   test -z "$GITHISTORY" || {
     echo '#YY:'
     echo '#YY: Commit History:'
