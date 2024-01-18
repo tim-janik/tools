@@ -322,33 +322,6 @@ yypushpull()
   git pull "$@"
 )
 
-# yystash
-yystash()
-(
-  set -Eeuo pipefail #-x
-  die() { echo "yystash: $*" 2>/dev/null ; exit -1 ; }
-  test -n "${1:-}" || die "missing branch name"
-  BRANCHNAME="$1"
-  SYMBOLICHEAD=$(git symbolic-ref HEAD 2>/dev/null || git rev-parse HEAD)
-  SYMBOLICHEAD=${SYMBOLICHEAD#refs/heads/}
-  HLINE=$(git rev-list --oneline -n 1 HEAD --)
-  git update-index -q --refresh # update unmerged and needs-updating state
-  DIFFSTAT=$(git diff --stat --ignore-submodules HEAD --)
-  test -z "$DIFFSTAT" && return # nothing to stash
-  git show-ref -q --heads "stash-$BRANCHNAME" && die "Branch already exists: stash-$BRANCHNAME"
-  TFILES=`mktemp -t yystash$$XXXXXX.tmp` && touch $TFILES || die "failed to create temporary file"
-  trap "rm -f $TFILES" 0 HUP INT QUIT TRAP USR1 PIPE TERM
-  # check working tree changes into index
-  TREE_HASH=$(git diff --name-only -z HEAD -- > "$TFILES" \
-                && git update-index -z --add --remove --stdin < "$TFILES" \
-                && git write-tree) || die "failed to create tree object from index"
-  COMMIT_HASH=$({ printf 'STASH: %s\n\n' "$BRANCHNAME" ; printf 'WIP on %s: %s\n%s' "$SYMBOLICHEAD" "$HLINE" "$DIFFSTAT" ; } \
-                  | git commit-tree $TREE_HASH -p HEAD) || die "failed to commit tree $tree_hash"
-  git branch "stash-$BRANCHNAME" $COMMIT_HASH || return $?
-  git rev-list --pretty=oneline -n 1 "stash-$BRANCHNAME" --
-  git checkout -f HEAD
-)
-
 # yystatus
 yystatus()
 (
@@ -436,6 +409,7 @@ ${B}SYNOPSIS$N
 	yyadd [FILE]        Add file to the next commit, marks conflicts resolved
 	yyblame [FILE]      Show revision and modifications per source code line
 	yycommit [-[0-9] …] Use an editor to compose a commit and select files
+	  -c <BRANCH>       Create BRANCH to store the new commit and switch back
 	yydiff [--] [FILE]  Compare HEAD against working tree
 	yyhelp              Show yyhelp command descriptions
 	yyinfo              Show repository information
@@ -457,7 +431,6 @@ ${B}SYNOPSIS$N
 	yystatus [-[citu]]  Display working tree status
 	                    -c: commit style; -i: .gitignore style;
 	                    -t: trim unknown; -u: show unknown;
-	yystash <BRANCH>    Stash tree modifications into a branch
 	yyswitch <BRANCH>   Switch to another branch
 	yytagdel <TAG…>     Delete tags
 	yyuncommit          Undo the last commit (must not be pushed)
@@ -522,7 +495,6 @@ __yyhelp_aliases()
   __git_complete yyrestore _git_restore
   __git_complete yyrm _git_rm
   complete -W '-c -i -t -u' yystatus
-  __git_complete yystash __git_complete_refs
   complete -F __yyhelp_compgen_tags yytagdel
   complete -F __yyhelp_compgen_refs yymerge
   if [[ $(type -t _git_switch) == function ]] ; then
