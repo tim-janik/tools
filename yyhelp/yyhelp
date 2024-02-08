@@ -52,7 +52,7 @@ __yyhelp_commit_template() # [FILES...]
     #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
     f=$(printf %s "$line" ;)
     B="${f#*/}";	# strip root dir
-    if test "$B" != "$f" ; then
+    if false test "$B" != "$f" ; then
       D="${f%%/*}";	# keep only root dir
       D="${D#.}";	# strip leading dot
       echo "${D^^*}: $B:" ;
