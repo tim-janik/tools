@@ -250,28 +250,39 @@ yyinfo()
 # yymerge
 yymerge()
 (
-  source "$(git --exec-path)/git-sh-setup" # die, require_work_tree, etc
-  if test "${1:-}" == '-m' ; then # merge into master
-    if test "${2:-}" == '' ; then # merge current branch  into master
-      BRANCH=$(git symbolic-ref HEAD) && BRANCH=${BRANCH#refs/heads/}
-    else
-      BRANCH="$2"
-    fi
-    git describe --dirty | fgrep -qe -dirty && die "$0: working tree must not be dirty"
-    for MAIN in master main trunk ; do
-      test -n "$(git config --get branch.$MAIN.remote)" && {
-	yywarp $MAIN # master/trunk/main/etc
-	break
-      }
+  source "$(git --exec-path)/git-sh-setup"	# die, require_work_tree, etc
+  set -Eeuo pipefail		     		# fail early *after* git-sh-setup
+  git describe --dirty | fgrep -qe -dirty && die "$0: working tree must not be dirty"
+  # args and vars
+  REWORD=false ; BRANCH= ; DEST=
+  while test $# -ne 0 ; do
+    case "$1" in \
+      -r)		REWORD=true && shift ;;
+      -d)		shift && DEST="$1" && shift ;;
+      *)                BRANCH="$1" ; shift ;;
+    esac ; done
+  # need source branch
+  test -z "$BRANCH" && BRANCH=$(git symbolic-ref HEAD || git rev-parse HEAD) && BRANCH=${BRANCH#refs/heads/}
+  git rev-parse -q --verify "$BRANCH^0" >/dev/null || die "$0: unknown revision: $BRANCH"
+  # need destination branch
+  test -n "$DEST" ||
+    for M in master trunk main ; do
+      test -n "$(git config --get branch.$M.remote)" && DEST="$M" && break
     done
-    shift
-  else
-    BRANCH="$1"
-  fi
-  set -Eeuo pipefail				# fail early *after* git-sh-setup
+  test -n "$DEST" || die "$0: missing merge destination branch"
+  git rev-parse -q --verify "$DEST^0" >/dev/null || die "$0: unknown revision: $DEST"
+  # reword top commit
+  git checkout "$BRANCH"
+  test "$REWORD" == true && {
+    git commit --amend
+    BRANCH=$(git symbolic-ref HEAD || git rev-parse HEAD)
+  }
+  # need author
   git var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing commit author information"
   git var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing committer information"
-  git rev-parse -q --verify "$BRANCH^0" >/dev/null || die "$0: unknown revision: $BRANCH"
+  # operate on destination branch
+  git checkout "$DEST"
+  # create merge msg
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
   test -e "$gitdir/MERGE_MSG" && die "$0: $gitdir/MERGE_MSG: another merge already in progress?"
   git --no-pager diff -U0 "HEAD..$BRANCH" |	# examine all branch changes
@@ -287,14 +298,17 @@ yymerge()
   if test "${YYCOMMIT_SIGNOFF:-true}" == true ; then
     __yyhelp_echo_signoff >> "$gitdir/MERGE_MSG"
   fi
+  # edit merge msg
   HO=`md5sum "$gitdir/MERGE_MSG"`
   $EDITOR "$gitdir/MERGE_MSG"
   HN=`md5sum "$gitdir/MERGE_MSG"`
   test "$HO" != "$HN" || {
+    git checkout "$BRANCH"
     rm -f $gitdir/MERGE_MSG
     die "$0: aborting draft merge..."
   }
-  git merge --no-edit --no-ff -m "`cat $gitdir/MERGE_MSG`" $BRANCH && rm -f $gitdir/MERGE_MSG
+  # create merge
+  git merge --no-edit --no-ff -m "`cat $gitdir/MERGE_MSG`" "$BRANCH" && rm -f $gitdir/MERGE_MSG
 )
 
 # yypr
@@ -419,7 +433,9 @@ ${B}SYNOPSIS$N
 	yylp                Show diffs in git log
 	yylsbranches        List branches
 	yylstags            List tags
-	yymerge [-m] <BRANCH> Merge BRANCH; -m: first warp to master/main/trunk
+	yymerge [-d BASE] [-r] BRANCH
+	                    Merge BRANCH into BASE (or master/trunk/main)
+	                    And reword the last commit with -r
 	yypr <ID>           Fetch and checkout Github pull request #ID
 	yypull              Pull sources from upstream
 	yypushpull [REMOTE] Push pending changes, else pull from upstream
