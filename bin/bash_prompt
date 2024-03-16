@@ -1,0 +1,114 @@
+#!/bin/bash
+# This Source Code Form is licensed MPL-2.0: http://mozilla.org/MPL/2.0
+
+# Usage: . ~/.bash_prompt
+
+# Function to check recent git log and diff for work in progress keywords
+bash_prompt_hashstat()
+{
+  local H="$1" Q=-q
+  test -n "$1" || { H=`\git rev-parse --short HEAD` ; Q= ; bash_prompt_hashstat_LAST= ; }  # allows arg-less invocation
+  [[ $bash_prompt_hashstat_LAST =~ $H ]] && { echo "${bash_prompt_hashstat_LAST#*:}" ; return ; }
+  local M= B=`for m in master main trunk origin/master origin/main origin/trunk ; do \git merge-base $m $H 2>/dev/null && break ; done`
+  test -n "$B" && {
+    local P='\bWIP\b|\bFIX''ME\b'
+    \git log "$B..$H" | grep $Q -E "$P|\bDEBUG\b" && M=×
+    \git diff --no-ext-diff "$B..$H" | sed '/^\+/!d' | grep $Q -Ei "$P" && M="$M+"
+    test "$M" == '×+' && M='*'
+  }
+  bash_prompt_hashstat_LAST="$H:$M"
+  echo "${bash_prompt_hashstat_LAST#*:}"
+}
+
+# Function to print fancy prompt
+bash_prompt_echo()
+{
+  # Last exit status and execution time
+  local exs=$? ps0start="$PS0start"
+  # Exit status and elapsed time formatting
+  local etime=$'\t' ex=$'\t'
+  ex=" \e[35m$exs\e[0m"	# (($exs == 0)) && unset exs || ex=" \e[35m$exs\e[0m"
+  if test "${#ps0start}" -gt 9 ; then
+    local now=`/usr/bin/date +%s%N`			# mseconds
+    local elapsed=$[ ${now::-6} - ${ps0start::-6} ]	# mseconds
+    (( $elapsed < 86400000 )) || { etime=$etime$[ $elapsed / 86400000 ]d ; elapsed=$[ $elapsed % 86400000 ] ; }
+    (( $elapsed <  3600000 )) || { etime=$etime$[ $elapsed /  3600000 ]h ; elapsed=$[ $elapsed % 3600000 ] ; }
+    (( $elapsed <    60000 )) || { etime=$etime$[ $elapsed /   60000 ]m ;  elapsed=$[ $elapsed % 60000 ] ; }
+    (( $elapsed <        1 )) || { etime=$etime$[ $elapsed /    1000 ].;   elapsed=000$elapsed;
+				   etime=$etime${elapsed:(-3)}s; }
+    (( ${#etime} == 0 )) || etime=" \e[0;33m""$etime""\e[0m"
+    # Note, `trap "save $SECONDS"` is fragile, inaccurate and breaks for subshells
+  elif test "$exs" == 0 ; then # no execution time seen, skip exit status display
+    ex=$'\t'
+  fi
+  # Battery formatting
+  local pw="↯" bat="\e[33;1m↯\e[0m "
+  if test -r /sys/class/power_supply/BAT0/status && read bs < /sys/class/power_supply/BAT0/status && test "$bs" == Discharging ; then
+    pw="⌁" # Discharging
+    read cp < /sys/class/power_supply/BAT0/charge_now && read cf < /sys/class/power_supply/BAT0/charge_full && cp=$[ $cp * 100 / $cf ]
+    { (( $cp < 20 )) && bat="\e[31m$pw$cp%\e[0m "; } ||
+      { (( $cp < 80 )) && bat="\e[33m$pw$cp%\e[0m "; } ||
+      { (( $cp < 100 )) && bat="\e[32m$pw$cp%\e[0m "; } ||
+      { (( $cp >= 100 )) && bat="\e[32m$pw\e[0m "; }
+  fi
+  # Temperature formatting
+  local tc=
+  test -x /usr/bin/acpi &&
+    tc=$(/usr/bin/acpi -t | sed -nr 's/.*, ([0-9]+\.[0-9]) degrees? C.*/\1/p' |
+	   awk 'BEGIN{a=0}{if ($1>0+a) a=$1} END{if (a>=40) print a>=70 ? "\033[31m" a "°\033[0m " : a "° "}')
+  # Jobs formatting
+  local jj=
+  test -z "$(jobs -p)" || {
+    local jr=(`jobs -rp`) js=(`jobs -sp`)
+    jr=${#jr[@]}
+    js=${#js[@]}
+    (( $js > 0 )) && jj="\e[0;2;37m$js""z "
+    (( $jr > 0 )) && jj="\e[0;2;37m$jr& "
+    (( $jr > 0 && $js > 0 )) && jj="\e[0;2;37m$jr&/$js""z "
+  }
+  # User @ Host formatting
+  local u="${LOGNAME-$USER}" h="$HOSTNAME" w="${PWD/#$HOME/\~}"
+  local userhost="\e[0;3;32m$u@$h"
+  local sshpre=
+  test -z "$SSH_TTY" || { userhost="\e[0;3;4;32m$u""@""\e[1m$h"; sshpre="🌍 "; }
+  # Writable Colon
+  local wcolon='\e[0;32m:\e[01;34m'
+  test -w . || wcolon='\e[0;31m:\e[34m'
+  # Git repo/dir, status
+  local gt gp=
+  IFS=$'\n' gt=(`\git rev-parse --absolute-git-dir --show-toplevel --short HEAD 2>/dev/null`) || gt= ; IFS=$' \t\n'
+  if test "${#gt[@]}" -ge 3 ; then
+    local gr="${gt[1]}" gh=$(LANG=C bash_prompt_hashstat "${gt[2]}")
+    local go=`git config --get remote.origin.url` && go="${go%.git}" && go="${go##*/}" && test -n "$go" && gr="$go"
+    gp="$(\git symbolic-ref HEAD 2>/dev/null)" && gp="${gp#refs/heads/}" || gp="${gt[2]}"
+    local gd="${gt[0]}"
+    test -r "$gd/refs/stash" -o -r "$gd/logs/refs/stash" &&	# fork to count stashes?
+      gt=(`\git stash list --pretty=%gD`) && gt=${#gt[@]} && (( $gt > 0 )) && gp="$gp\e[0;2m⁺$gt"
+    # \git diff --quiet --no-ext-diff || gp="$gp\e[0;31m*"		# just dirty
+    gt=$(LANG=C \git -P diff --no-ext-diff --shortstat)
+    test -z "$gt" || {							# dirty + diff
+      gp="$gp\e[0;31m*"
+      gt=( ${gt//[^0-9]/ } )
+      gp="$gp\e[0;36m @@×${gt[0]}${gt[2]+-}${gt[2]}${gt[1]++}${gt[1]}"
+    }
+    test -z "$gh" || gp="$gp \e[31m$gh""WI""P"
+    gp="\e[0m[⧟ \e[33m${gr##*/}\e[0m ꜓\e[32m$gp\e[0m]"
+  fi
+  # Window title (xterm)
+  local wt=
+  case "$TERM" in
+    xterm*|rxvt*)	wt="\e]0;$sshpre$u@$h:$w\a" ;;
+  esac
+  # Prompt
+  echo -ne "$wt$bat""$tc""$jj""$userhost""$wcolon""${w%/}/""\e[00m""\t$etime""$ex""\t\t$gp""\e[0m"
+}
+
+# Install fancy prompt with shell command execution time recording
+[[ $- =~ i ]] && {	# Prompt for interactive shell
+  PS1='$(bash_prompt_echo)\n$ '
+  test -x /usr/bin/date && { # Time stamping via PS0
+    # Assign/reset global PS0start shell variable via arithmetic evaluation
+    PS1='$(bash_prompt_echo)${IFS:$((PS0start=000000)):0}\n$ '
+    test -x /usr/bin/date && PS0='${IFS:$((PS0start=`/usr/bin/date +%s%N`)):0}'
+  }
+}
