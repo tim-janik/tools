@@ -52,7 +52,7 @@ __yyhelp_commit_template() # [FILES...]
     #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
     f=$(printf %s "$line" ;)
     B="${f#*/}";	# strip root dir
-    if test "$B" != "$f" ; then
+    if false test "$B" != "$f" ; then
       D="${f%%/*}";	# keep only root dir
       D="${D#.}";	# strip leading dot
       echo "${D^^*}: $B:" ;
@@ -65,14 +65,13 @@ __yyhelp_commit_template() # [FILES...]
 
 # __yyhelp_compgen_refs
 __yyhelp_compgen_refs()
-{
+{ # $1=command $2=word4completion §3=precedingword
   local cur refs
   cur=${COMP_WORDS[COMP_CWORD]}
   COMPREPLY=()  # Array variable storing the possible completions.
   refs=$( git for-each-ref --format='%(refname:short)' refs/heads )
-  if test "$1" == "$3" ; then # completing first arg
-    COMPREPLY=( $(compgen -W "$refs" -- "$cur") )
-  fi
+  #if test "$1" == "$3" ; then ... fi # completing first arg
+  COMPREPLY=( $(compgen -W "$refs" -- "$cur") )
 }
 
 # __yyhelp_compgen_tags
@@ -101,13 +100,20 @@ yytagdel()
 yycommit()
 (
   test "$1" == "${1#-p}" && PICK=false || { PICK=true; shift ; }
-  test "$1" == "${1#-[0-9]}" && N=0 || { N=${1:1}; shift ; }
+  test "$1" == "-c" -a -n "${2:-}" && { CREATEBRANCH="$2"; shift; shift; } || CREATEBRANCH=
+  test "$1" == "${1#-[0-9]}" && N=17 || { N=${1:1}; shift ; }
   set -Eeuo pipefail
+  test -x /usr/bin/gawk || gawk() { awk "$@" ; }
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
   die() { echo "$*" 2>/dev/null ; exit -1 ; }
+  test -n "$CREATEBRANCH" && git rev-parse --verify "$CREATEBRANCH" 2>/dev/null && die "yycommit: ref exists: $CREATEBRANCH"
   $PICK && {
     __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
-    exec git commit -ps -t "$gitdir/YYCOMMIT.txt"
+    test -z "$CREATEBRANCH" || git switch -C "$CREATEBRANCH"
+    git commit -ps -t "$gitdir/YYCOMMIT.txt" "$@" ; ccode=$?
+    test -z "$CREATEBRANCH" || git switch -
+    sync &
+    exit $ccode
   }
   SUBDIRECTORY_OK=Yes
   TAB=$'\t'
@@ -127,8 +133,6 @@ yycommit()
   # construct commit message
   echo -n > "$gitdir/YYCOMMIT.txt" || exit $? # abort if not writable
   __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
-  GITHISTORY=$(git log --oneline HEAD ^HEAD~$N | sed 's/^[^ ]*/#YY:/')
-  test -z "$GITHISTORY" || echo "${GITHISTORY}" >> "$gitdir/YYCOMMIT.txt"
   YYCOMMIT_SIGNOFF=$(git config --get yycommit.signoff) || :
   if test "${YYCOMMIT_SIGNOFF:-true}" == true ; then
     __yyhelp_echo_signoff >> "$gitdir/YYCOMMIT.txt"
@@ -153,6 +157,12 @@ _EOF_HERE
 	#YY:
 	#YY: (The "#YY:" prefixed lines are ignored for commit messages)
 _EOF_HERE
+  GITHISTORY=$((git log --oneline HEAD -n "$N" 2>/dev/null || :) | sed 's/^[^ ]*/#YY:/')
+  test -z "$GITHISTORY" || {
+    echo '#YY:'
+    echo '#YY: Commit History:'
+    echo "${GITHISTORY}"
+  } >> "$gitdir/YYCOMMIT.txt"
   # edit commit message
   grep -q '^#YY:F ' "$gitdir/YYCOMMIT.txt" || { echo "** Nothing to commit." >&2 && exit 0 ; }
   ED=`git config --get core.editor` || :
@@ -166,7 +176,7 @@ _EOF_HERE
   test 0 -lt "$mlines" -a "$md5now" != "$MD5USELESS" || die "** Aborting commit, missing commit message..."
   # save current index around commit (since GIT_INDEX_FILE=tmpindex git-commit is buggy)
   TMPINDEX=`mktemp "$gitdir/.precommittindex$$.XXXXXX"` && cp -p "$gitdir/index" "$TMPINDEX" || die "$0: failed to create temporary file"
-  trap 'mv -f "$TMPINDEX" "$gitdir/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM
+  trap 'mv -f "$TMPINDEX" "$gitdir/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM	# restore previous index on abort
   # unstage everything in index
   git read-tree HEAD
   # stage files from commit message
@@ -185,13 +195,17 @@ _EOF_HERE
   sed '/^#YY:/d' -i "$gitdir/YYCOMMIT.txt"
   # abort for empty committs
   git diff-index --cached HEAD | grep -q '.' || { echo "** Nothing to commit." >&2 && exit 0 ; }
+  # switch into new branch if requested
+  test -z "$CREATEBRANCH" || git switch -C "$CREATEBRANCH"
   # actually commit changes
   git commit -F "$gitdir/YYCOMMIT.txt" ; ccode=$?
   # cleanup, restore old index and force update on comitted files
   test 0 = $ccode && rm -f "$gitdir/YYCOMMIT.txt"
   mv -f "$TMPINDEX" "$gitdir/index"
-  trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM
-  git update-index --refresh --again > /dev/null || : # update stat info
+  trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM # cancel index restoration
+  git update-index --refresh --again > /dev/null || : # update stat info in index
+  # switch back to old branch if requested
+  test -z "$CREATEBRANCH" || git switch -
   sync &
   exit $ccode
 )
@@ -236,20 +250,47 @@ yyinfo()
 # yymerge
 yymerge()
 (
-  source "$(git --exec-path)/git-sh-setup" # die, require_work_tree, etc
-  BRANCH="$1"
-  set -Eeuo pipefail				# fail early *after* git-sh-setup
+  source "$(git --exec-path)/git-sh-setup"	# die, require_work_tree, etc
+  set -Eeuo pipefail		     		# fail early *after* git-sh-setup
+  git describe --dirty | fgrep -qe -dirty && die "$0: working tree must not be dirty"
+  # args and vars
+  REWORD=false ; BRANCH= ; DEST=
+  while test $# -ne 0 ; do
+    case "$1" in \
+      -r)		REWORD=true && shift ;;
+      -d)		shift && DEST="$1" && shift ;;
+      *)                BRANCH="$1" ; shift ;;
+    esac ; done
+  # need source branch
+  test -z "$BRANCH" && BRANCH=$(git symbolic-ref HEAD || git rev-parse HEAD) && BRANCH=${BRANCH#refs/heads/}
+  git rev-parse -q --verify "$BRANCH^0" >/dev/null || die "$0: unknown revision: $BRANCH"
+  # need destination branch
+  test -n "$DEST" ||
+    for M in master trunk main ; do
+      test -n "$(git config --get branch.$M.remote)" && DEST="$M" && break
+    done
+  test -n "$DEST" || die "$0: missing merge destination branch"
+  git rev-parse -q --verify "$DEST^0" >/dev/null || die "$0: unknown revision: $DEST"
+  # reword top commit
+  git checkout "$BRANCH"
+  test "$REWORD" == true && {
+    git commit --amend
+    BRANCH=$(git symbolic-ref HEAD || git rev-parse HEAD)
+  }
+  # need author
   git var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing commit author information"
   git var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing committer information"
-  git rev-parse -q --verify "$BRANCH^0" >/dev/null || die "$0: unknown revision: $BRANCH"
+  # operate on destination branch
+  git checkout "$DEST"
+  # create merge msg
   gitdir="$(git rev-parse --git-dir 2>/dev/null)"
   test -e "$gitdir/MERGE_MSG" && die "$0: $gitdir/MERGE_MSG: another merge already in progress?"
   git --no-pager diff -U0 "HEAD..$BRANCH" |	# examine all branch changes
-    egrep "^+.*\b(XXX|WIP|FIXME)\b" &&		# work still to be done
+    egrep "^\+.*\b(XXX|WIP|FIXME)\b" &&		# work still to be done
     sleep 5
   SEP="^^^^^^^^^^^^^^^^^^^^^^^^^^"
   echo -e "$SEP MERGE-DRAFT $SEP # DELETE THIS" > "$gitdir/MERGE_MSG"
-  echo -e "Merge branch '$BRANCH'\n\n* $BRANCH:" >> "$gitdir/MERGE_MSG"
+  echo -e "Merge branch '$BRANCH'\n\n* Branch commit log:" >> "$gitdir/MERGE_MSG"
   git log --pretty=$'\f%s%+b' "HEAD..$BRANCH" |
     sed '/^\(Signed-off-by\|Acked-by\|Tested-by\|Cc\):/d' |
     sed '/^$/d ; s/^/\t/ ; s/^\t\f/  /' >> "$gitdir/MERGE_MSG"
@@ -257,14 +298,34 @@ yymerge()
   if test "${YYCOMMIT_SIGNOFF:-true}" == true ; then
     __yyhelp_echo_signoff >> "$gitdir/MERGE_MSG"
   fi
+  # edit merge msg
   HO=`md5sum "$gitdir/MERGE_MSG"`
   $EDITOR "$gitdir/MERGE_MSG"
   HN=`md5sum "$gitdir/MERGE_MSG"`
   test "$HO" != "$HN" || {
+    git checkout "$BRANCH"
     rm -f $gitdir/MERGE_MSG
     die "$0: aborting draft merge..."
   }
-  git merge --no-edit --no-ff -m "`cat $gitdir/MERGE_MSG`" $BRANCH && rm -f $gitdir/MERGE_MSG
+  # create merge
+  git merge --no-edit --no-ff -m "`cat $gitdir/MERGE_MSG`" "$BRANCH" && rm -f $gitdir/MERGE_MSG
+)
+
+# yypr
+yypr()
+(
+  set -Eeuo pipefail
+  die() { echo "$*" 2>/dev/null ; exit -1 ; }
+  ID="$1"
+  git describe --dirty | fgrep -qe -dirty && die "yypr: working tree must not be dirty"
+  command -V gh >/dev/null || die "yypr: command gh(1) required for pull requests"
+  command -V jq >/dev/null || die "yypr: command jq(1) required for pull requests"
+  PRBRANCH=pr"$ID"/$(gh pr view "$ID" --json author,headRefName | jq -r '(.author.login + "-" + .headRefName)')
+  ( set -x
+    git fetch origin pull/"$ID"/head:"$PRBRANCH"
+    git checkout "$PRBRANCH"
+  )
+  git --no-pager log -1 --oneline
 )
 
 # yypushpull
@@ -273,33 +334,6 @@ yypushpull()
   set -Eeuo pipefail #-x
   git push "$@"
   git pull "$@"
-)
-
-# yystash
-yystash()
-(
-  set -Eeuo pipefail #-x
-  die() { echo "yystash: $*" 2>/dev/null ; exit -1 ; }
-  test -n "${1:-}" || die "missing branch name"
-  BRANCHNAME="$1"
-  SYMBOLICHEAD=$(git symbolic-ref HEAD 2>/dev/null || git rev-parse HEAD)
-  SYMBOLICHEAD=${SYMBOLICHEAD#refs/heads/}
-  HLINE=$(git rev-list --oneline -n 1 HEAD --)
-  git update-index -q --refresh # update unmerged and needs-updating state
-  DIFFSTAT=$(git diff --stat --ignore-submodules HEAD --)
-  test -z "$DIFFSTAT" && return # nothing to stash
-  git show-ref -q --heads "stash-$BRANCHNAME" && die "Branch already exists: stash-$BRANCHNAME"
-  TFILES=`mktemp -t yystash$$XXXXXX.tmp` && touch $TFILES || die "failed to create temporary file"
-  trap "rm -f $TFILES" 0 HUP INT QUIT TRAP USR1 PIPE TERM
-  # check working tree changes into index
-  TREE_HASH=$(git diff --name-only -z HEAD -- > "$TFILES" \
-                && git update-index -z --add --remove --stdin < "$TFILES" \
-                && git write-tree) || die "failed to create tree object from index"
-  COMMIT_HASH=$({ printf 'STASH: %s\n\n' "$BRANCHNAME" ; printf 'WIP on %s: %s\n%s' "$SYMBOLICHEAD" "$HLINE" "$DIFFSTAT" ; } \
-                  | git commit-tree $TREE_HASH -p HEAD) || die "failed to commit tree $tree_hash"
-  git branch "stash-$BRANCHNAME" $COMMIT_HASH || return $?
-  git rev-list --pretty=oneline -n 1 "stash-$BRANCHNAME" --
-  git checkout -f HEAD
 )
 
 # yystatus
@@ -389,6 +423,7 @@ ${B}SYNOPSIS$N
 	yyadd [FILE]        Add file to the next commit, marks conflicts resolved
 	yyblame [FILE]      Show revision and modifications per source code line
 	yycommit [-[0-9] …] Use an editor to compose a commit and select files
+	  -c <BRANCH>       Create BRANCH to store the new commit and switch back
 	yydiff [--] [FILE]  Compare HEAD against working tree
 	yyhelp              Show yyhelp command descriptions
 	yyinfo              Show repository information
@@ -398,6 +433,10 @@ ${B}SYNOPSIS$N
 	yylp                Show diffs in git log
 	yylsbranches        List branches
 	yylstags            List tags
+	yymerge [-d BASE] [-r] BRANCH
+	                    Merge BRANCH into BASE (or master/trunk/main)
+	                    And reword the last commit with -r
+	yypr <ID>           Fetch and checkout Github pull request #ID
 	yypull              Pull sources from upstream
 	yypushpull [REMOTE] Push pending changes, else pull from upstream
 	yypurge             Reset the worktree files to match a clean checkout
@@ -408,7 +447,6 @@ ${B}SYNOPSIS$N
 	yystatus [-[citu]]  Display working tree status
 	                    -c: commit style; -i: .gitignore style;
 	                    -t: trim unknown; -u: show unknown;
-	yystash <BRANCH>    Stash tree modifications into a branch
 	yyswitch <BRANCH>   Switch to another branch
 	yytagdel <TAG…>     Delete tags
 	yyuncommit          Undo the last commit (must not be pushed)
@@ -450,7 +488,7 @@ __yyhelp_aliases()
   alias yylog='LESS="$LESS -F" git log --stat'
   alias yylp='LESS="$LESS -F" git log -p --stat'
   alias yypull='git pull'
-  alias yyrestore='git restore --source HEAD'
+  alias yyrestore='git restore --source HEAD --staged --worktree --'
   alias yyrm='git rm --force'
   alias yyuncommit='git reset --mixed -N HEAD~1'
   alias yylsbranches='LESS="$LESS -F" git branch -a -vv'
@@ -473,7 +511,6 @@ __yyhelp_aliases()
   __git_complete yyrestore _git_restore
   __git_complete yyrm _git_rm
   complete -W '-c -i -t -u' yystatus
-  __git_complete yystash __git_complete_refs
   complete -F __yyhelp_compgen_tags yytagdel
   complete -F __yyhelp_compgen_refs yymerge
   if [[ $(type -t _git_switch) == function ]] ; then
@@ -492,4 +529,5 @@ while test $# -ne 0 ; do
     *)		shift ;;
   esac
 done
+
 true
