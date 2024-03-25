@@ -290,7 +290,7 @@ yymerge()
     sleep 5
   SEP="^^^^^^^^^^^^^^^^^^^^^^^^^^"
   echo -e "$SEP MERGE-DRAFT $SEP # DELETE THIS" > "$gitdir/MERGE_MSG"
-  echo -e "Merge branch '$BRANCH'\n\n* $BRANCH:" >> "$gitdir/MERGE_MSG"
+  echo -e "Merge branch '$BRANCH'\n\n* Branch commit log:" >> "$gitdir/MERGE_MSG"
   git log --pretty=$'\f%s%+b' "HEAD..$BRANCH" |
     sed '/^\(Signed-off-by\|Acked-by\|Tested-by\|Cc\):/d' |
     sed '/^$/d ; s/^/\t/ ; s/^\t\f/  /' >> "$gitdir/MERGE_MSG"
