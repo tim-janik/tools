@@ -24,7 +24,7 @@ bash_prompt_hashstat()
 bash_prompt_echo()
 {
   # Last exit status and execution time
-  local exs=$? ps0start="$PS0start"
+  local exs=$? ps0start="$PS0start" w="${1:-$PWD}"
   # Exit status and elapsed time formatting
   local etime=$'\t' ex=$'\t'
   ex=" \e[35m$exs\e[0m"	# (($exs == 0)) && unset exs || ex=" \e[35m$exs\e[0m"
@@ -67,7 +67,7 @@ bash_prompt_echo()
     (( $jr > 0 && $js > 0 )) && jj="\e[0;2;37m$jr&/$js""z "
   }
   # User @ Host formatting
-  local u="${LOGNAME-$USER}" h="$HOSTNAME" w="${PWD/#$HOME/\~}"
+  local u="${LOGNAME-$USER}" h="$HOSTNAME"
   local userhost="\e[0;3;32m$u@$h"
   local sshpre=
   test -z "$SSH_TTY" || { userhost="\e[0;3;4;32m$u""@""\e[1m$h"; sshpre="🌍 "; }
@@ -105,10 +105,10 @@ bash_prompt_echo()
 
 # Install fancy prompt with shell command execution time recording
 [[ $- =~ i ]] && {	# Prompt for interactive shell
-  PS1='$(bash_prompt_echo)\n$ '
+  PS1='$(bash_prompt_echo "\w")\n$ '
   test -x /usr/bin/date && { # Time stamping via PS0
     # Assign/reset global PS0start shell variable via arithmetic evaluation
-    PS1='$(bash_prompt_echo)${IFS:$((PS0start=000000)):0}\n$ '
+    PS1='$(bash_prompt_echo "\w")${IFS:$((PS0start=000000)):0}\n$ '
     test -x /usr/bin/date && PS0='${IFS:$((PS0start=`/usr/bin/date +%s%N`)):0}'
   }
 }
