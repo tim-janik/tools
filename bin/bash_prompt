@@ -70,7 +70,7 @@ bash_prompt_echo()
   local u="${LOGNAME-$USER}" h="$HOSTNAME"
   local userhost="\e[0;3;32m$u@$h"
   local sshpre=
-  test -z "$SSH_TTY" || { userhost="\e[0;3;4;32m$u""@""\e[1m$h"; sshpre="🌍 "; }
+  test -z "$SSH_TTY" || { sshpre="🌍 "; userhost="$sshpre\e[0;3;4;32m$u""@""\e[1m$h"; }
   # Writable Colon
   local wcolon='\e[0;32m:\e[01;34m'
   test -w . || wcolon='\e[0;31m:\e[34m'
