@@ -26,20 +26,21 @@ bash_prompt_echo()
   # Last exit status and execution time
   local exs=$? ps0start="$PS0start" w="${1:-$PWD}"
   # Exit status and elapsed time formatting
-  local etime=$'\t' ex=$'\t'
-  ex=" \e[35m$exs\e[0m"	# (($exs == 0)) && unset exs || ex=" \e[35m$exs\e[0m"
+  local etime='\t' ex=$''
+  ex="\e[35m$exs\e[0m"	# (($exs == 0)) && unset exs || ex=" \e[35m$exs\e[0m"
   if test "${#ps0start}" -gt 9 ; then
     local now=`/usr/bin/date +%s%N`			# mseconds
     local elapsed=$[ ${now::-6} - ${ps0start::-6} ]	# mseconds
+    etime=''
     (( $elapsed < 86400000 )) || { etime=$etime$[ $elapsed / 86400000 ]d ; elapsed=$[ $elapsed % 86400000 ] ; }
     (( $elapsed <  3600000 )) || { etime=$etime$[ $elapsed /  3600000 ]h ; elapsed=$[ $elapsed % 3600000 ] ; }
     (( $elapsed <    60000 )) || { etime=$etime$[ $elapsed /   60000 ]m ;  elapsed=$[ $elapsed % 60000 ] ; }
     (( $elapsed <        1 )) || { etime=$etime$[ $elapsed /    1000 ].;   elapsed=000$elapsed;
 				   etime=$etime${elapsed:(-3)}s; }
-    (( ${#etime} == 0 )) || etime=" \e[0;33m""$etime""\e[0m"
+    (( ${#etime} == 0 )) || etime="\e[0;33m""$etime""\e[0m"
     # Note, `trap "save $SECONDS"` is fragile, inaccurate and breaks for subshells
   elif test "$exs" == 0 ; then # no execution time seen, skip exit status display
-    ex=$'\t'
+    ex=' '
   fi
   # Battery formatting
   local pw="↯" bat="\e[33;1m↯\e[0m "
@@ -100,7 +101,10 @@ bash_prompt_echo()
     xterm*|rxvt*)	wt="\e]0;$sshpre$u@$h:$w\a" ;;
   esac
   # Prompt
-  echo -ne "$wt$bat""$tc""$jj""$userhost""$wcolon""${w%/}/""\e[00m""\t$etime""$ex""\t\t$gp""\e[0m"
+  test 1 -eq $(( $COLUMNS - ${#w} >  80 )) && T='\t' || T=' '
+  test 1 -eq $(( $COLUMNS - ${#w} > 120 )) && S='\t\t' || S=' '
+  test 1 -eq $(( $COLUMNS - ${#w} > 150 )) && S="$S$S"
+  echo -ne "$wt$bat""$tc""$jj""$userhost""$wcolon""${w%/}/""\e[00m"" $T$ex" "$etime""$S""$T$gp""\e[0m"
 }
 
 # Install fancy prompt with shell command execution time recording
