@@ -427,8 +427,8 @@ ${B}SYNOPSIS$N
 	yydiff [--] [FILE]  Compare HEAD against working tree
 	yyhelp              Show yyhelp command descriptions
 	yyinfo              Show repository information
-	yyll                One line log of all commits, with author and date
-	yylr                One line log of all git refs
+	yyll                One line log of reachable commits, with author, date
+	yylr                One line log of all reachable git refs
 	yylog               Show git log with extra info
 	yylp                Show diffs in git log
 	yylsbranches        List branches
@@ -484,7 +484,7 @@ __yyhelp_aliases()
   alias yyblame='LESS="$LESS -F" git blame'
   #alias yylg='git log --graph --decorate --oneline'
   alias yylr='LESS="$LESS -F" git log --graph --decorate --oneline --simplify-by-decoration --all'
-  alias yyll='LESS="$LESS -F" git log --graph --decorate --full-history --all --pretty="%C(yellow)%h%Creset%C(auto)%d%Creset %s %C(bold blue)<%aL>%Creset %C(white dim)%cs%Creset"'
+  alias yyll='LESS="$LESS -F" git log --graph --decorate --full-history --pretty="%C(yellow)%h%Creset%C(auto)%d%Creset %s %C(bold blue)<%aL>%Creset %C(white dim)%cs%Creset"'
   alias yylog='LESS="$LESS -F" git log --stat'
   alias yylp='LESS="$LESS -F" git log -p --stat'
   alias yypull='git pull'
