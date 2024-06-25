@@ -272,8 +272,8 @@ yymerge()
   test -n "$DEST" || die "$0: missing merge destination branch"
   git rev-parse -q --verify "$DEST^0" >/dev/null || die "$0: unknown revision: $DEST"
   # reword top commit
-  git checkout "$BRANCH"
   test "$REWORD" == true && {
+    git checkout "$BRANCH"
     git commit --amend
     BRANCH=$(git symbolic-ref HEAD || git rev-parse HEAD)
   }
