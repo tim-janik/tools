@@ -3,21 +3,30 @@
 
 # Usage: . ~/.bash_prompt
 
-# Function to check recent git log and diff for work in progress keywords
-bash_prompt_hashstat()
+# Print Git, JJ prompt
+bash_prompt_src_repo()
 {
-  local H="$1" Q=-q
-  test -n "$1" || { H=`\git rev-parse --short HEAD` ; Q= ; bash_prompt_hashstat_LAST= ; }  # allows arg-less invocation
-  [[ $bash_prompt_hashstat_LAST =~ $H ]] && { echo "${bash_prompt_hashstat_LAST#*:}" ; return ; }
-  local M= B=`for m in master main trunk origin/master origin/main origin/trunk ; do \git merge-base $m $H 2>/dev/null && break ; done`
-  test -n "$B" && {
-    local P='\bWIP\b|\bFIX''ME\b'
-    \git log "$B..$H" | grep $Q -E "$P|\bDEBUG\b" && M=×
-    \git diff --no-ext-diff "$B..$H" | sed '/^\+/!d' | grep $Q -Ei "$P" && M="$M+"
-    test "$M" == '×+' && M='*'
+  test -r .jj -o -r ../.jj -o -r ../../.jj -o -r ../../../.jj -o -r ../../../../.jj -o -r ../../../../../.jj -o -r ../../../../../../.jj -o \
+       -r ../../../../../../../.jj -o -r ../../../../../../../../.jj -o -r ../../../../../../../../../.jj -o -r ../../../../../../../../../../.jj -o \
+       -r ../../../../../../../../../../../.jj -o -r ../../../../../../../../../../../../.jj && {
+    local T='
+      "[@ " ++ concat(
+         separate(" ",
+           format_short_change_id_with_hidden_and_divergent_info(self),
+             branches,
+             if(conflict, label("conflict", "conflict")),
+         ),
+       ) ++ "]"'	# committer.timestamp().local().format("%Y-%m-%d"),
+    jj --ignore-working-copy show --tool true --color=always -r @ -T "$T" # builtin_log_oneline
+    # local O='"⋮" ++ id.short() ++ "]"' ; jj --ignore-working-copy op log --no-graph --color=always -l 1 -T "$O"
+    return
   }
-  bash_prompt_hashstat_LAST="$H:$M"
-  echo "${bash_prompt_hashstat_LAST#*:}"
+  test -r .git -o -r ../.git -o -r ../../.git -o -r ../../../.git -o -r ../../../../.git -o -r ../../../../../.git -o -r ../../../../../../.git -o \
+       -r ../../../../../../../.git -o -r ../../../../../../../../.git -o -r ../../../../../../../../../.git -o -r ../../../../../../../../../../.git -o \
+       -r ../../../../../../../../../../../.git -o -r ../../../../../../../../../../../../.git && {
+    local gp=`git -P log -1 --color=always --pretty='%C(auto)%h ꜓%C(auto)%(decorate:prefix=,suffix=,tag=,pointer=→,separator= )'`
+    echo "\e[0m[⧟ ${gp/HEAD/}\e[0m]"
+  }
 }
 
 # Function to print fancy prompt
@@ -75,26 +84,8 @@ bash_prompt_echo()
   # Writable Colon
   local wcolon='\e[0;32m:\e[01;34m'
   test -w . || wcolon='\e[0;31m:\e[34m'
-  # Git repo/dir, status
-  local gt gp=
-  IFS=$'\n' gt=(`\git rev-parse --absolute-git-dir --show-toplevel --short HEAD 2>/dev/null`) || gt= ; IFS=$' \t\n'
-  if test "${#gt[@]}" -ge 3 ; then
-    local gr="${gt[1]}" gh=$(LANG=C bash_prompt_hashstat "${gt[2]}")
-    local go=`git config --get remote.origin.url` && go="${go%.git}" && go="${go##*/}" && test -n "$go" && gr="$go"
-    gp="$(\git symbolic-ref HEAD 2>/dev/null)" && gp="${gp#refs/heads/}" || gp="${gt[2]}"
-    local gd="${gt[0]}"
-    test -r "$gd/refs/stash" -o -r "$gd/logs/refs/stash" &&	# fork to count stashes?
-      gt=(`\git stash list --pretty=%gD`) && gt=${#gt[@]} && (( $gt > 0 )) && gp="$gp\e[0;2m⁺$gt"
-    # \git diff --quiet --no-ext-diff || gp="$gp\e[0;31m*"		# just dirty
-    gt=$(LANG=C \git -P diff --no-ext-diff --shortstat)
-    test -z "$gt" || {							# dirty + diff
-      gp="$gp\e[0;31m*"
-      gt=( ${gt//[^0-9]/ } )
-      gp="$gp\e[0;36m @@×${gt[0]}${gt[2]+-}${gt[2]}${gt[1]++}${gt[1]}"
-    }
-    test -z "$gh" || gp="$gp \e[31m$gh""WI""P"
-    gp="\e[0m[⧟ \e[33m${gr##*/}\e[0m ꜓\e[32m$gp\e[0m]"
-  fi
+  # Git, JJ, etc repos
+  local gp=$(bash_prompt_src_repo)
   # Window title (xterm)
   local wt=
   case "$TERM" in
