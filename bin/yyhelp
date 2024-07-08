@@ -99,6 +99,8 @@ yytagdel()
 # yycommit
 yycommit()
 (
+  test -z "$(jj root 2>/dev/null)" ||
+    exec jj commit -i
   test "$1" == "${1#-p}" && PICK=false || { PICK=true; shift ; }
   test "$1" == "-c" -a -n "${2:-}" && { CREATEBRANCH="$2"; shift; shift; } || CREATEBRANCH=
   test "$1" == "${1#-[0-9]}" && N=17 || { N=${1:1}; shift ; }
@@ -210,17 +212,61 @@ _EOF_HERE
   exit $ccode
 )
 
+# yydescribe -         Describe/amend current commit
+# yydescribe()
+# (
+#   set -Eeuo pipefail #-x
+#
+#   if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
+#     git commit -o --amend
+#   elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
+#     jj describe
+#   else
+#     echo "$0: no git/jj repository" >&2 ; exit 1
+#   fi
+# )
+
 # yydiff
 yydiff()
 (
   set -Eeuo pipefail #-x
-  if __yyhelp_match '* -- *' " $* " ; then
-    LESS="$LESS -+c" git diff HEAD "$@"
-  elif __yyhelp_match '* -*' " $* " ; then
-    LESS="$LESS -+c" git diff HEAD "$@" -- .
+
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
+    # git update-index --refresh 2>/dev/null || :
+    if __yyhelp_match '* -- *' " $* " ; then
+      LESS="$LESS -+c" git diff HEAD "$@"
+    elif __yyhelp_match '* -*' " $* " ; then
+      LESS="$LESS -+c" git diff HEAD "$@" -- .
+    else
+      LESS="$LESS -+c" git diff HEAD -- "${@:-.}"
+    fi
+  elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
+    B= C= O=--git W=
+    tty -s && C="--color=always"
+    while test $# -gt 0 ; do
+      case "$1" in
+	-b)		B=-b ; shift ;;
+	--word-diff)	W=--word-diff ; shift ;;
+	*)		break ;;
+      esac
+    done
+    test -n "$B$W" && {
+      O=--tool\ yyhelp
+      export YYHELP_EXECVE_ARGS="git diff --src-prefix / --dst-prefix / --no-index --minimal $B $W $C"
+    }
+    if tty -s ; then
+      jj diff $C $O "$@" | LESS="$LESS -+c" less
+    else
+      jj diff $C $O "$@"
+    fi
   else
-    LESS="$LESS -+c" git diff HEAD -- "${@:-.}"
+    echo "$0: no git/jj repository" >&2 ; exit 1
   fi
+)
+test -z "${YYHELP_EXECVE_ARGS:-}" || (
+  set -x
+  exec $YYHELP_EXECVE_ARGS -- "$@"
+  exit ${YYHELP_EXECVE_STATUS:-$?}
 )
 
 # yyinfo
@@ -245,6 +291,49 @@ yyinfo()
   test -n "$HSYM"	&& echo "BRANCH:   $HSYM"
   test -n "$RH"		&& echo "Origin:   $RH"
   return 0
+)
+
+# yyll
+yyll()
+(
+  set -Eeuo pipefail #-x
+
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
+    LESS="$LESS -F" git log --graph --decorate --full-history --pretty="%C(yellow)%h%Creset%C(auto)%d%Creset %s %C(bold blue)<%aL>%Creset %C(white dim)%cs%Creset" "$@"
+  elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
+    LESS="$LESS -F" jj log -r :: "$@"
+  else
+    echo "$0: no git/jj repository" >&2 ; exit 1
+  fi
+)
+
+# yylog
+yylog()
+(
+  set -Eeuo pipefail #-x
+
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
+    LESS="$LESS -F" git log --stat "$@"
+  elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
+    [[ " $* " =~ " -p "|--patch ]] && O=--git || O=
+    LESS="$LESS -F" jj log -T builtin_log_detailed -s -r :: $O "$@"
+  else
+    echo "$0: no git/jj repository" >&2 ; exit 1
+  fi
+)
+
+# yylp
+yylp()
+(
+  set -Eeuo pipefail #-x
+
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
+    LESS="$LESS -F" git log -p --stat "$@"
+  elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
+    LESS="$LESS -F" jj log -s --git -r ::@ "$@"
+  else
+    echo "$0: no git/jj repository" >&2 ; exit 1
+  fi
 )
 
 # yymerge
@@ -272,8 +361,8 @@ yymerge()
   test -n "$DEST" || die "$0: missing merge destination branch"
   git rev-parse -q --verify "$DEST^0" >/dev/null || die "$0: unknown revision: $DEST"
   # reword top commit
-  git checkout "$BRANCH"
   test "$REWORD" == true && {
+    git checkout "$BRANCH"
     git commit --amend
     BRANCH=$(git symbolic-ref HEAD || git rev-parse HEAD)
   }
@@ -381,8 +470,25 @@ yyswitch()
 # yyview
 yyview()
 (
-  git update-index --refresh
-  gitk --all &
+  set -Eeuo pipefail #-x
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
+    git update-index --refresh
+    gitk --all &
+  elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
+    JJROOT="$(jj root)"
+    COMMIT="$(jj --no-pager show --tool true -T commit_id -r @)"
+    cd "$JJROOT" # root relative paths
+    jj git export --quiet
+    test -e "$JJROOT/.jj/repo/store/git" && export GIT_DIR="$JJROOT/.jj/repo/store/git" || export GIT_DIR="$JJROOT/.git"
+    readarray -t HEADS < <(cd "$GIT_DIR" && find refs/heads refs/remotes refs/tags -type f -printf %p\\n | sed 's|^refs/[^/]*/||')
+    (
+      cd "$GIT_DIR"
+      gitk --select-commit=$COMMIT $COMMIT "${HEADS[@]}" --
+      jj git import --quiet
+    ) &
+  else
+    echo "$0: no git/jj repository" >&2 ; exit 1
+  fi
 )
 
 # yywarp
@@ -484,9 +590,6 @@ __yyhelp_aliases()
   alias yyblame='LESS="$LESS -F" git blame'
   #alias yylg='git log --graph --decorate --oneline'
   alias yylr='LESS="$LESS -F" git log --graph --decorate --oneline --simplify-by-decoration --all'
-  alias yyll='LESS="$LESS -F" git log --graph --decorate --full-history --pretty="%C(yellow)%h%Creset%C(auto)%d%Creset %s %C(bold blue)<%aL>%Creset %C(white dim)%cs%Creset"'
-  alias yylog='LESS="$LESS -F" git log --stat'
-  alias yylp='LESS="$LESS -F" git log -p --stat'
   alias yypull='git pull'
   alias yyrestore='git restore --source HEAD --staged --worktree --'
   alias yyrm='git rm --force'
