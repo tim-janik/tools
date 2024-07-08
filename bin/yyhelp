@@ -470,8 +470,25 @@ yyswitch()
 # yyview
 yyview()
 (
-  git update-index --refresh
-  gitk --all &
+  set -Eeuo pipefail #-x
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
+    git update-index --refresh
+    gitk --all &
+  elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
+    JJROOT="$(jj root)"
+    COMMIT="$(jj --no-pager show --tool true -T commit_id -r @)"
+    cd "$JJROOT" # root relative paths
+    jj git export --quiet
+    test -e "$JJROOT/.jj/repo/store/git" && export GIT_DIR="$JJROOT/.jj/repo/store/git" || export GIT_DIR="$JJROOT/.git"
+    readarray -t HEADS < <(cd "$GIT_DIR" && find refs/heads refs/remotes refs/tags -type f -printf %p\\n | sed 's|^refs/[^/]*/||')
+    (
+      cd "$GIT_DIR"
+      gitk --select-commit=$COMMIT $COMMIT "${HEADS[@]}" --
+      jj git import --quiet
+    ) &
+  else
+    echo "$0: no git/jj repository" >&2 ; exit 1
+  fi
 )
 
 # yywarp
