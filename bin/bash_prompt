@@ -101,10 +101,10 @@ bash_prompt_echo()
 
 # Install fancy prompt with shell command execution time recording
 [[ $- =~ i ]] && {	# Prompt for interactive shell
-  PS1='$(bash_prompt_echo "\w")\n$ '
+  PS1='$(bash_prompt_echo "\w")\n⮞ '
   test -x /usr/bin/date && { # Time stamping via PS0
     # Assign/reset global PS0start shell variable via arithmetic evaluation
-    PS1='$(bash_prompt_echo "\w")${IFS:$((PS0start=000000)):0}\n$ '
+    PS1='$(bash_prompt_echo "\w")${IFS:$((PS0start=000000)):0}\n⮞ '
     test -x /usr/bin/date && PS0='${IFS:$((PS0start=`/usr/bin/date +%s%N`)):0}'
   }
 }
