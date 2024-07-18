@@ -25,7 +25,7 @@ bash_prompt_src_repo()
   test -r .git -o -r ../.git -o -r ../../.git -o -r ../../../.git -o -r ../../../../.git -o -r ../../../../../.git -o -r ../../../../../../.git -o \
        -r ../../../../../../../.git -o -r ../../../../../../../../.git -o -r ../../../../../../../../../.git -o -r ../../../../../../../../../../.git -o \
        -r ../../../../../../../../../../../.git -o -r ../../../../../../../../../../../../.git && {
-    local gp=`git -P log -1 --color=always --pretty='%C(auto)%h ꜓%C(auto)%(decorate:prefix=,suffix=,tag=,pointer=→,separator= )'`
+    local gp=`git -P log -1 --color=always --pretty='%C(auto)%h ꜓%C(auto)%(decorate:prefix=,suffix=,tag=,pointer=→,separator= )' 2>/dev/null`
     echo "\e[0m[⧟ ${gp/HEAD/}\e[0m]"
   }
 }
