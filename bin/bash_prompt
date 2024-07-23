@@ -13,8 +13,9 @@ bash_prompt_src_repo()
       "[@ " ++ concat(
          separate(" ",
            format_short_change_id_with_hidden_and_divergent_info(self),
-             branches,
-             if(conflict, label("conflict", "conflict")),
+           format_short_commit_id(commit_id),
+           branches,
+           if(conflict, label("conflict", "conflict")),
          ),
        ) ++ "]"'	# committer.timestamp().local().format("%Y-%m-%d"),
     jj --ignore-working-copy show --tool true --color=always -r @ -T "$T" # builtin_log_oneline
@@ -24,7 +25,7 @@ bash_prompt_src_repo()
   test -r .git -o -r ../.git -o -r ../../.git -o -r ../../../.git -o -r ../../../../.git -o -r ../../../../../.git -o -r ../../../../../../.git -o \
        -r ../../../../../../../.git -o -r ../../../../../../../../.git -o -r ../../../../../../../../../.git -o -r ../../../../../../../../../../.git -o \
        -r ../../../../../../../../../../../.git -o -r ../../../../../../../../../../../../.git && {
-    local gp=`git -P log -1 --color=always --pretty='%C(auto)%h ꜓%C(auto)%(decorate:prefix=,suffix=,tag=,pointer=→,separator= )'`
+    local gp=`git -P log -1 --color=always --pretty='%C(auto)%h ꜓%C(auto)%(decorate:prefix=,suffix=,tag=,pointer=→,separator= )' 2>/dev/null`
     echo "\e[0m[⧟ ${gp/HEAD/}\e[0m]"
   }
 }
@@ -100,10 +101,10 @@ bash_prompt_echo()
 
 # Install fancy prompt with shell command execution time recording
 [[ $- =~ i ]] && {	# Prompt for interactive shell
-  PS1='$(bash_prompt_echo "\w")\n$ '
+  PS1='$(bash_prompt_echo "\w")\n⮞ '
   test -x /usr/bin/date && { # Time stamping via PS0
     # Assign/reset global PS0start shell variable via arithmetic evaluation
-    PS1='$(bash_prompt_echo "\w")${IFS:$((PS0start=000000)):0}\n$ '
+    PS1='$(bash_prompt_echo "\w")${IFS:$((PS0start=000000)):0}\n⮞ '
     test -x /usr/bin/date && PS0='${IFS:$((PS0start=`/usr/bin/date +%s%N`)):0}'
   }
 }
