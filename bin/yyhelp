@@ -472,7 +472,7 @@ yyview()
 (
   set -Eeuo pipefail #-x
   if git rev-parse --is-inside-work-tree >/dev/null 2>&1 ; then
-    git update-index --refresh
+    git update-index --refresh || :
     gitk --all &
   elif type jj >/dev/null 2>&1 && jj root >/dev/null 2>&1 ; then
     JJROOT="$(jj root)"
