@@ -37,6 +37,66 @@ make_commit_template() # [FILES...]
   git var GIT_COMMITTER_IDENT | sed -e 's/>.*/>/ ; s/^/Signed-off-by: /'
 )
 
+help_yycommit()
+{
+  { cat <<__EOF__
+**NAME**
+	yycommit - Edit commit message and file list
+
+**SYNOPSIS**
+	yycommit [(-c | --create) <BRANCH>] [-h | --help]
+		 [(-l | --limit) <N>] [-p | --patch] [-x]
+		 [--] [<pathspec>...]
+
+**DESCRIPTION**
+	The **yycommit** command is a wrapper around **git-commit**(1) that will
+	prepare a commit message template and allows the user to select
+	files to be comitted from the comment section in the commit
+	message template.
+
+**OPTIONS**
+	-c, --create <BRANCH>
+	    Create _BRANCH_, commit and switch back to the previous HEAD.
+
+	-h, --help
+	    Describe the command, synopsis and options.
+
+	-l, --limit <N>
+	    Limit the number of history lines, shown in the commit
+	    message template.
+
+	-p, --patch
+	    Use the interactive patch selection from **git-commit**(1).
+
+	-x
+	    Print implementation shell commands on stderr.
+
+	<pathspec>...
+	    List files to be comitted, untracked files will be auto-
+	    added.
+__EOF__
+  } | {
+    B=$'\e[1m'              # Bold
+    T=$'\e[32;1;4m'         # Title
+    C=$'\e[36m'             # Code
+    I=$'\e[3m'              # Italic
+    U=$'\e[4m'              # Underline
+    Z=$'\e[0;24m'           # Reset
+    W='[][<>{}A-Z| $@a-z0-9 ←-⇿ :…+-]'      # Word like chars (english)
+    SEDSCRIPT="
+    s/(^|\r)##* ([^\r]+)[ #]*\r/\1$T\2$Z\r/g        # Headings (Title)
+    s/(\r\s?\s?)[-*] (\w+\b:)?/\1$B* \2$Z/g         # List bullet
+    s/(^|\s)\*\*($W+)\*\*/\1$B\2$Z/g          	    # Bold
+    s/(^|\s)\*($W+)\*([^*])/\1$I\2$Z\3/g              # Italic
+    s/(^|\s)_($W+)_([^_])/\1$U\2$Z\3/g                # Underline
+    s/(^|\s)\`($W+)\`([^\`])/\1$C\2$Z\3/g             # Code
+    s/\r?<!--([^-]|-[^-]|--[^>])*-->//g             # Html Comments
+    s,(\bhttps?://[^ ()\r]+),$U\1$Z,g               # Link
+    "
+    tr \\n \\r | sed -re "$SEDSCRIPT" | tr \\r \\n
+  }
+}
+
 # yycommit - wrapper for git-commit that lets the user pick files
 yycommit()
 (
@@ -48,13 +108,13 @@ yycommit()
     case "$1" in
       -c|--create)	test -n "${2:-}" || die 'missing branch name for argument: --create <new-branch>'
 			CREATE="$2" ;;
-      -h|--help)	help ; exit ;;
+      -h|--help)	help_yycommit ; exit ;;
       -l|--limit)	test -n "${2:-}" || die 'missing number for argument: -l <limit>'
 			NUM="$2" ;;
       -p|--patch)	PATCH=: ;;
       -x)		set -x ;;
       --)		shift ; break ;; # remaining "$@" are files
-      -*)		help ; exit 1 ;;
+      -*)		help_yycommit ; exit 1 ;;
       *)		break ;;	 # remaining "$@" are files
     esac
     shift
