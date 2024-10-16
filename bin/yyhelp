@@ -43,26 +43,6 @@ __yyhelp_list_committable() # [FILES...]
   done
 )
 
-# commit_template
-__yyhelp_commit_template() # [FILES...]
-(
-  set -Eeuo pipefail #-x
-  BARE_PATHS=true __yyhelp_list_committable "$@" > "$gitdir/yycommit-template.lst"
-  while read line ; do
-    #f=$(printf %s "$line" | sed 's/\.[^\/.]*$//' ;) # file w/o extension
-    f=$(printf %s "$line" ;)
-    B="${f#*/}";	# strip root dir
-    if false test "$B" != "$f" ; then
-      D="${f%%/*}";	# keep only root dir
-      D="${D#.}";	# strip leading dot
-      echo "${D^^*}: $B:" ;
-    else
-      echo "${f}: " ;
-    fi
-  done < "$gitdir/yycommit-template.lst"
-  rm -f "$gitdir/yycommit-template.lst"
-)
-
 # __yyhelp_compgen_refs
 __yyhelp_compgen_refs()
 { # $1=command $2=word4completion §3=precedingword
@@ -94,122 +74,6 @@ yytagdel()
     git tag -d "$1" || return $?
     shift
   done
-)
-
-# yycommit
-yycommit()
-(
-  test -z "$(jj root 2>/dev/null)" ||
-    exec jj commit -i
-  test "$1" == "${1#-p}" && PICK=false || { PICK=true; shift ; }
-  test "$1" == "-c" -a -n "${2:-}" && { CREATEBRANCH="$2"; shift; shift; } || CREATEBRANCH=
-  test "$1" == "${1#-[0-9]}" && N=17 || { N=${1:1}; shift ; }
-  set -Eeuo pipefail
-  test -x /usr/bin/gawk || gawk() { awk "$@" ; }
-  gitdir="$(git rev-parse --git-dir 2>/dev/null)"
-  die() { echo "$*" 2>/dev/null ; exit -1 ; }
-  test -n "$CREATEBRANCH" && git rev-parse --verify "$CREATEBRANCH" 2>/dev/null && die "yycommit: ref exists: $CREATEBRANCH"
-  $PICK && {
-    __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
-    test -z "$CREATEBRANCH" || git switch -C "$CREATEBRANCH"
-    git commit -ps -t "$gitdir/YYCOMMIT.txt" "$@" ; ccode=$?
-    test -z "$CREATEBRANCH" || git switch -
-    sync &
-    exit $ccode
-  }
-  SUBDIRECTORY_OK=Yes
-  TAB=$'\t'
-  test true == `git rev-parse --is-inside-work-tree 2>/dev/null` || die "$0: Command requires a git working tree"
-  verify_msg=true
-  # parse and set AUTHOR and COMMITTER
-  git var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing commit author information"
-  git var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing committer information"
-  AIDENT=$(git var GIT_AUTHOR_IDENT    | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
-             read author; read time; echo -n "  $author" ; echo $time | gawk '{ print strftime (" %F %T %z", $1) }'
-           })
-  CIDENT=$(git var GIT_COMMITTER_IDENT | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
-             read author; read time; echo -n "  $author" ; echo $time | gawk '{ print strftime (" %F %T %z", $1) }'
-           })
-  # update stat info for list_committable
-  git update-index --refresh --verbose || :
-  # construct commit message
-  echo -n > "$gitdir/YYCOMMIT.txt" || exit $? # abort if not writable
-  __yyhelp_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
-  YYCOMMIT_SIGNOFF=$(git config --get yycommit.signoff) || :
-  if test "${YYCOMMIT_SIGNOFF:-true}" == true ; then
-    __yyhelp_echo_signoff >> "$gitdir/YYCOMMIT.txt"
-  fi
-  echo >> "$gitdir/YYCOMMIT.txt"
-  cat >> "$gitdir/YYCOMMIT.txt" <<-_EOF_HERE
-	#YY: ----------------------------------------------------------------------
-	#YY: Files to be committed (detected by "#YY:F"):
-	#YY:
-_EOF_HERE
-  __yyhelp_list_committable "$@" | sed 's/^/#YY:F   /' >> "$gitdir/YYCOMMIT.txt"
-  cat >> "$gitdir/YYCOMMIT.txt" <<-_EOF_HERE
-	#YY:
-	#YY: Author:
-	#YY: $AIDENT
-	#YY: Committer:
-	#YY: $CIDENT
-	#YY:
-_EOF_HERE
-  yyinfo | sed 's/^/#YY: /' >> "$gitdir/YYCOMMIT.txt"
-  cat >> "$gitdir/YYCOMMIT.txt" <<-_EOF_HERE
-	#YY:
-	#YY: (The "#YY:" prefixed lines are ignored for commit messages)
-_EOF_HERE
-  GITHISTORY=$((git log --oneline HEAD -n "$N" 2>/dev/null || :) | sed 's/^[^ ]*/#YY:/')
-  test -z "$GITHISTORY" || {
-    echo '#YY:'
-    echo '#YY: Commit History:'
-    echo "${GITHISTORY}"
-  } >> "$gitdir/YYCOMMIT.txt"
-  # edit commit message
-  grep -q '^#YY:F ' "$gitdir/YYCOMMIT.txt" || { echo "** Nothing to commit." >&2 && exit 0 ; }
-  ED=`git config --get core.editor` || :
-  MD5USELESS=`grep -v -i '^#YY:' < "$gitdir/YYCOMMIT.txt" | git stripspace | md5sum`
-  ${ED:-joe} "$gitdir/YYCOMMIT.txt" ||
-    die "** Aborting commit, editing commit message failed: $gitdir/YYCOMMIT.txt"
-  # verify user's commit message
-  $verify_msg && test -x "$gitdir/hooks/commit-msg" && { "$gitdir/hooks/commit-msg" "$gitdir/YYCOMMIT.txt" || exit $? ; }
-  mlines=`git stripspace < "$gitdir/YYCOMMIT.txt" | wc -l`
-  md5now=`grep -v -i '^#YY:' < "$gitdir/YYCOMMIT.txt" | git stripspace | md5sum`
-  test 0 -lt "$mlines" -a "$md5now" != "$MD5USELESS" || die "** Aborting commit, missing commit message..."
-  # save current index around commit (since GIT_INDEX_FILE=tmpindex git-commit is buggy)
-  TMPINDEX=`mktemp "$gitdir/.precommittindex$$.XXXXXX"` && cp -p "$gitdir/index" "$TMPINDEX" || die "$0: failed to create temporary file"
-  trap 'mv -f "$TMPINDEX" "$gitdir/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM	# restore previous index on abort
-  # unstage everything in index
-  git read-tree HEAD
-  # stage files from commit message
-  grep "^#YY:F " "$gitdir/YYCOMMIT.txt" |             	# filter #YY:F
-    sed -e "s/^#YY:F \+//" | {                          # extract file names
-    while IFS=" $TAB" read -r mode file ; do
-      case "$mode" in
-        D)        git update-index --force-remove -- "$file" || die "** Aborting commit, removing failed: $file" ;;
-        A|M)      git update-index --add          -- "$file" || die "** Aborting commit, adding failed: $file" ;;
-        n)        ;; # commitignore
-        '!')      ;; # missing file
-        *)        die "** Aborting commit, unknown file mode: $mode $file" ;;
-      esac
-    done
-  }
-  sed '/^#YY:/d' -i "$gitdir/YYCOMMIT.txt"
-  # abort for empty committs
-  git diff-index --cached HEAD | grep -q '.' || { echo "** Nothing to commit." >&2 && exit 0 ; }
-  # switch into new branch if requested
-  test -z "$CREATEBRANCH" || git switch -C "$CREATEBRANCH"
-  # actually commit changes
-  git commit -F "$gitdir/YYCOMMIT.txt" ; ccode=$?
-  # cleanup, restore old index and force update on comitted files
-  test 0 = $ccode && rm -f "$gitdir/YYCOMMIT.txt"
-  mv -f "$TMPINDEX" "$gitdir/index"
-  trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM # cancel index restoration
-  git update-index --refresh --again > /dev/null || : # update stat info in index
-  # switch back to old branch if requested
-  test -z "$CREATEBRANCH" || git switch -
-  sync &
-  exit $ccode
 )
 
 # yydescribe -         Describe/amend current commit
@@ -528,8 +392,7 @@ ${B}NAME$N
 ${B}SYNOPSIS$N
 	yyadd [FILE]        Add file to the next commit, marks conflicts resolved
 	yyblame [FILE]      Show revision and modifications per source code line
-	yycommit [-[0-9] …] Use an editor to compose a commit and select files
-	  -c <BRANCH>       Create BRANCH to store the new commit and switch back
+	yycommit [-c|-p|…]  Use an editor to compose a commit and select files
 	yydiff [--] [FILE]  Compare HEAD against working tree
 	yyhelp              Show yyhelp command descriptions
 	yyinfo              Show repository information
