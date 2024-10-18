@@ -1,0 +1,229 @@
+#!/bin/bash
+# This Source Code Form is licensed MPL-2.0: http://mozilla.org/MPL/2.0
+set -Eeuo pipefail #-x
+SCRIPTNAME=`basename $0` && function die  { [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2; exit 127 ; }
+
+# check deps
+test -x /usr/bin/gawk || gawk() { awk "$@" ; }
+gitdir="$(git rev-parse --git-dir 2>/dev/null)" || die "must run $SCRIPTNAME within a Git repository"
+gitprefix="$(git rev-parse --show-prefix)" || : && test -n "$gitprefix" || gitprefix=.
+
+# list_committable
+list_committable() # [FILES...]
+(
+  test -s "$gitdir/commit-ignore" && commitignore="$gitdir/commit-ignore" || commitignore=
+  test -z "$*" && commitdir=. || commitdir=
+  git diff-index --name-status --no-renames HEAD -- $commitdir "$@" |
+    while IFS=$'\t' read -r mode file ; do
+      case "$mode" in
+	D)  test -n "$(git diff-files -- "$file")" && mode=! ;;
+	M)  test -n "$commitignore" && fgrep -qx "$file" "$commitignore" && mode=n ;;
+      esac
+      if test "${BARE_PATHS:-}" = true ; then
+	echo "$file"
+      else
+	printf "%s\t%s\n" "$mode" "$file"
+      fi
+    done
+)
+
+# commit_template
+make_commit_template() # [FILES...]
+(
+  BARE_PATHS=true \
+    list_committable "$@" |
+    sed 's/$/: /'
+  echo # separating newline before signoff section
+  git var GIT_COMMITTER_IDENT | sed -e 's/>.*/>/ ; s/^/Signed-off-by: /'
+)
+
+help_yycommit()
+{
+  { cat <<__EOF__
+**NAME**
+	yycommit - Edit commit message and file list
+
+**SYNOPSIS**
+	yycommit [(-c | --create) <BRANCH>] [-h | --help]
+		 [(-l | --limit) <N>] [-p | --patch] [-x]
+		 [--] [<pathspec>...]
+
+**DESCRIPTION**
+	The **yycommit** command is a wrapper around **git-commit**(1) that will
+	prepare a commit message template and allows the user to select
+	files to be comitted from the comment section in the commit
+	message template.
+
+**OPTIONS**
+	-c, --create <BRANCH>
+	    Create _BRANCH_, commit and switch back to the previous HEAD.
+
+	-h, --help
+	    Describe the command, synopsis and options.
+
+	-l, --limit <N>
+	    Limit the number of history lines, shown in the commit
+	    message template.
+
+	-p, --patch
+	    Use the interactive patch selection from **git-commit**(1).
+
+	-x
+	    Print implementation shell commands on stderr.
+
+	<pathspec>...
+	    List files to be comitted, untracked files will be auto-
+	    added.
+__EOF__
+  } | {
+    B=$'\e[1m'              # Bold
+    T=$'\e[32;1;4m'         # Title
+    C=$'\e[36m'             # Code
+    I=$'\e[3m'              # Italic
+    U=$'\e[4m'              # Underline
+    Z=$'\e[0;24m'           # Reset
+    W='[][<>{}A-Z| $@a-z0-9 ←-⇿ :…+-]'      # Word like chars (english)
+    SEDSCRIPT="
+    s/(^|\r)##* ([^\r]+)[ #]*\r/\1$T\2$Z\r/g        # Headings (Title)
+    s/(\r\s?\s?)[-*] (\w+\b:)?/\1$B* \2$Z/g         # List bullet
+    s/(^|\s)\*\*($W+)\*\*/\1$B\2$Z/g          	    # Bold
+    s/(^|\s)\*($W+)\*([^*])/\1$I\2$Z\3/g              # Italic
+    s/(^|\s)_($W+)_([^_])/\1$U\2$Z\3/g                # Underline
+    s/(^|\s)\`($W+)\`([^\`])/\1$C\2$Z\3/g             # Code
+    s/\r?<!--([^-]|-[^-]|--[^>])*-->//g             # Html Comments
+    s,(\bhttps?://[^ ()\r]+),$U\1$Z,g               # Link
+    "
+    tr \\n \\r | sed -re "$SEDSCRIPT" | tr \\r \\n
+  }
+}
+
+# yycommit - wrapper for git-commit that lets the user pick files
+yycommit()
+(
+  # operate root relative for all paths to be correct
+  cd "$(git rev-parse --show-toplevel)"
+  # parse args
+  PATCH=false CREATE= NUM=17
+  while test $# -ne 0 ; do
+    case "$1" in
+      -c|--create)	test -n "${2:-}" || die 'missing branch name for argument: --create <new-branch>'
+			CREATE="$2" ;;
+      -h|--help)	help_yycommit ; exit ;;
+      -l|--limit)	test -n "${2:-}" || die 'missing number for argument: -l <limit>'
+			NUM="$2" ;;
+      -p|--patch)	PATCH=: ;;
+      -x)		set -x ;;
+      --)		shift ; break ;; # remaining "$@" are files
+      -*)		help_yycommit ; exit 1 ;;
+      *)		break ;;	 # remaining "$@" are files
+    esac
+    shift
+  done
+  # validate
+  test true == `git rev-parse --is-inside-work-tree 2>/dev/null` || die "$0: command requires a git working tree"
+  git var GIT_AUTHOR_IDENT    2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing commit author information"
+  git var GIT_COMMITTER_IDENT 2>/dev/null | grep -q '\b[0-9]\{8,\}[ ]\+[+-][0-9]\+ *$' || die "$0: missing committer information"
+  test -n "$CREATE" &&
+    git rev-parse --verify "$CREATE" 2>/dev/null &&
+    die "ref name already exists: $CREATE"
+  # update stat info for list_committable
+  git update-index --refresh --verbose || :
+  # handle --patch
+  if $PATCH ; then
+    make_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
+    test -z "$CREATE" || git switch -C "$CREATE"
+    git commit -p -t "$gitdir/YYCOMMIT.txt" && ecode=0 || ecode=$?
+    test -z "$CREATE" || git switch -
+    sync &
+    exit $ecode
+  fi
+  # read AUTHOR and COMMITTER, GITURL
+  AIDENT=$(git var GIT_AUTHOR_IDENT    | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
+             read author; read time; echo -n "  $author" ; echo $time | gawk '{ print strftime (" %F %T %z", $1) }'; } )
+  CIDENT=$(git var GIT_COMMITTER_IDENT | sed 's/\b\([0-9]\{8,\}[ ]\+[+-][0-9]\+ *\)$/\n\1/' | {
+             read author; read time; echo -n "  $author" ; echo $time | gawk '{ print strftime (" %F %T %z", $1) }'; } )
+  GITURL="$(git config --get remote.origin.url)" || :
+  SYMHEAD=$(git symbolic-ref HEAD 2>/dev/null || git rev-parse HEAD) && SYMHEAD=${SYMHEAD#refs/heads/}
+  test -z "$GITURL" && GITURL="$(git rev-parse --show-toplevel)"	# no url, must be local
+  # add untracked files explicitely listed in $@
+  for ((i=1; i<=$#; i++)); do
+    git status --short --untracked-files=all -- "${!i}" | {
+      IFS=' ' read -r mode file
+      test "$mode" == '??' -a "$file" == "${!i}" &&
+	git add -N -- "$file"
+      true
+    }
+  done
+  # construct commit message
+  make_commit_template "$@" > "$gitdir/YYCOMMIT.txt"
+  echo >> "$gitdir/YYCOMMIT.txt"
+  cat >> "$gitdir/YYCOMMIT.txt" <<-__EOF__
+	#YY: ----------------------------------------------------------------------
+	#YY: Files to be committed (marked as "#YY:F"):
+	#YY:
+	__EOF__
+  list_committable "$@" | sed 's/^/#YY:F   /' >> "$gitdir/YYCOMMIT.txt"
+  cat >> "$gitdir/YYCOMMIT.txt" <<-__EOF__
+	#YY:
+	#YY: Author:
+	#YY: $AIDENT
+	#YY: Committer:
+	#YY: $CIDENT
+	#YY:
+	#YY: URL:    $GITURL
+	#YY: BRANCH: $SYMHEAD
+	__EOF__
+  GITHISTORY=$((git log --oneline HEAD -n "$NUM" 2>/dev/null || :) | sed 's/^[^ ]*/#YY:/')
+  test -z "$GITHISTORY" || {
+    echo '#YY:'
+    echo '#YY: Commit History:'
+    echo "${GITHISTORY}"
+  } >> "$gitdir/YYCOMMIT.txt"
+  # edit commit message
+  grep -q '^#YY:F   ' "$gitdir/YYCOMMIT.txt" || die "** Nothing to commit"
+  ED=`git config --get core.editor` || :
+  MD5USELESS=`grep -v -i '^#YY:' < "$gitdir/YYCOMMIT.txt" | git stripspace | md5sum`
+  ${ED:-${EDITOR:-nano}} "$gitdir/YYCOMMIT.txt" ||
+    die "** Aborting commit, editing commit message failed: $gitdir/YYCOMMIT.txt"
+  # validate edited commit message
+  test -x "$gitdir/hooks/commit-msg" && { "$gitdir/hooks/commit-msg" "$gitdir/YYCOMMIT.txt" || exit $? ; }
+  mlines=`grep -v -i '^#YY:' < "$gitdir/YYCOMMIT.txt" | git stripspace | wc -l`  || :
+  md5now=`grep -v -i '^#YY:' < "$gitdir/YYCOMMIT.txt" | git stripspace | md5sum` || :
+  test 0 -lt "$mlines" -a "$md5now" != "$MD5USELESS" || die "** Aborting commit, empty commit message..."
+  # save current index around commit (since GIT_INDEX_FILE=tmpindex git-commit is buggy)
+  TMPINDEX=`mktemp "$gitdir/.precommittindex$$.XXXXXX"` &&
+    cp -p "$gitdir/index" "$TMPINDEX" || die "failed to create temporary file"
+  trap 'mv -f "$TMPINDEX" "$gitdir/index"' 0 HUP INT QUIT TRAP USR1 PIPE TERM	# restore previous index on abort
+  # unstage everything in index
+  git read-tree HEAD
+  # stage files from commit message
+  sed -ne '/^#YY:F   /{ s/^#YY:F   //; p; }' "$gitdir/YYCOMMIT.txt" | {	# filter #YY:F, print file names
+    while IFS=$'\t' read -r mode file ; do
+      case "$mode" in
+        D)        git update-index --force-remove -- "$file" || die "** Aborting commit, removing failed: $file" ;;
+        A|M)      git update-index --add          -- "$file" || die "** Aborting commit, adding failed: $file" ;;
+        n)        ;; # commitignore
+        '!')      ;; # missing file
+        *)        die "** Aborting commit, unknown file mode: $mode $file" ;;
+      esac
+    done
+  }
+  sed '/^#YY:/d' -i "$gitdir/YYCOMMIT.txt"
+  # abort for empty committs
+  git diff-index --cached HEAD | grep -q '.' || die "** Nothing to commit"
+  # switch into new branch if requested
+  test -z "$CREATE" || git switch -C "$CREATE"
+  # actually commit changes
+  git commit -F "$gitdir/YYCOMMIT.txt" && ecode=0 || ecode=$?
+  # cleanup, restore old index and force update on comitted files
+  test 0 = $ecode && rm -f "$gitdir/YYCOMMIT.txt"
+  mv -f "$TMPINDEX" "$gitdir/index"
+  trap - 0 HUP INT QUIT TRAP USR1 PIPE TERM # cancel index restoration
+  git update-index --refresh --again > /dev/null || : # update stat info in index
+  # switch back to old branch if requested
+  test -z "$CREATE" || git switch -
+  sync &
+  exit $ecode
+)
+
+yycommit "$@"
