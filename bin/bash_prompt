@@ -96,7 +96,8 @@ bash_prompt_echo()
   test 1 -eq $(( $COLUMNS - ${#w} >  80 )) && T='\t' || T=' '
   test 1 -eq $(( $COLUMNS - ${#w} > 120 )) && S='\t\t' || S=' '
   test 1 -eq $(( $COLUMNS - ${#w} > 150 )) && S="$S$S"
-  echo -ne "$wt$bat""$tc""$jj""$userhost""$wcolon""${w%/}/""\e[00m"" $T$ex" "$etime""$S""$T$gp""\e[0m"
+  local pproc="$(</proc/$PPID/comm)"
+  echo -ne "$wt$bat""$tc""$jj""$userhost""$wcolon""${w%/}/""\e[00m"" $T$ex" "$etime""$S""$T$gp""\t\e[2m(${pproc%%-})\e[0m"
 }
 
 # Install fancy prompt with shell command execution time recording
