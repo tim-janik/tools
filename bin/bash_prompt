@@ -9,16 +9,20 @@ bash_prompt_src_repo()
   test -r .jj -o -r ../.jj -o -r ../../.jj -o -r ../../../.jj -o -r ../../../../.jj -o -r ../../../../../.jj -o -r ../../../../../../.jj -o \
        -r ../../../../../../../.jj -o -r ../../../../../../../../.jj -o -r ../../../../../../../../../.jj -o -r ../../../../../../../../../../.jj -o \
        -r ../../../../../../../../../../../.jj -o -r ../../../../../../../../../../../../.jj && {
+    # https://jj-vcs.github.io/jj/latest/templates/
+    #  format_short_change_id_with_hidden_and_divergent_info(self),
     local T='
-      "[@ " ++ concat(
+      "[" ++ concat(
          separate(" ",
-           format_short_change_id_with_hidden_and_divergent_info(self),
-           format_short_commit_id(commit_id),
+           "⧟" ++ format_short_commit_id(commit_id),
+           "@",
+           format_short_change_id_with_change_offset(self),
            bookmarks,
            if(conflict, label("conflict", "conflict")),
          ),
-       ) ++ "]"'	# committer.timestamp().local().format("%Y-%m-%d"),
-    jj --ignore-working-copy show --tool true --color=always -r @ -T "$T" # builtin_log_oneline
+       ) ++ ""'	# committer.timestamp().local().format("%Y-%m-%d"),
+    jj --ignore-working-copy show --no-pager --tool true --color=always -r @ -T "$T" </dev/null
+    jj --ignore-working-copy op log --no-graph --no-pager --color=always -n1 -T '" |" ++ self.id().short() ++ "]"' </dev/null
     # local O='"⋮" ++ id.short() ++ "]"' ; jj --ignore-working-copy op log --no-graph --color=always -l 1 -T "$O"
     return
   }
