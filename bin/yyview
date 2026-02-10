@@ -1,0 +1,19 @@
+#!/bin/bash
+# This Source Code Form is licensed MPL-2.0: http://mozilla.org/MPL/2.0
+set -Eeuo pipefail #-x
+
+[[ " $* " =~ --help ]] && {
+  echo "yyview - Run gitk(1) with all branches and tags in the background"
+  exit
+}
+
+if jj root >/dev/null 2>&1 ; then
+  jj status >/dev/null 2>&1 || :
+  COMMIT=$(jj --no-pager --ignore-working-copy log --no-graph -r @ -T commit_id)
+  set -x
+  exec gitk --branches --tags --remotes --select-commit=$COMMIT $COMMIT HEAD --
+else
+  git status >/dev/null 2>&1 || :
+  set -x
+  gitk --all &
+fi

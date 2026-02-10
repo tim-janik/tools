@@ -3,6 +3,12 @@
 set -Eeuo pipefail #-x
 SCRIPTNAME=`basename $0` && function die  { [ -n "$*" ] && echo "$SCRIPTNAME: $*" >&2; exit 127 ; }
 
+# pass on to jj if appropriate
+jj --ignore-working-copy root >/dev/null 2>&1 && {
+  jj-fzf --version >/dev/null 2>&1 && exec jj-fzf commit
+  exec jj commit
+}
+
 # check deps
 test -x /usr/bin/gawk || gawk() { awk "$@" ; }
 gitdir="$(git rev-parse --git-dir 2>/dev/null)" || die "must run $SCRIPTNAME within a Git repository"
